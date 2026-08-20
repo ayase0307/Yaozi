@@ -20,6 +20,7 @@ import {
 } from "./segments";
 import { diffParts } from "./diff";
 import SafeFrame, { SAFE_FRAMES, matchPresetByRatio, useVideoRect } from "./SafeFrame";
+import { SubtitleLines } from "./StyleControls";
 import StylePanel from "./StylePanel";
 import {
   RUNNING_STATUSES,
@@ -31,6 +32,7 @@ import {
   type Project,
   type Segment,
   type SubtitleStyle,
+  type TranslateJob,
 } from "./types";
 import Waveform from "./Waveform";
 
@@ -45,6 +47,7 @@ const SAVE_LABEL: Record<SaveState, string> = {
 
 const EXPORT_FORMATS = [
   { format: "srt", label: "SRT 字幕檔" },
+  { format: "srt-bi", label: "SRT 雙語字幕檔" },
   { format: "vtt", label: "VTT 字幕檔" },
   { format: "txt", label: "逐字稿(純文字)" },
   { format: "txt-ts", label: "逐字稿(含時間)" },
@@ -97,6 +100,12 @@ export default function Editor({ projectId }: { projectId: string }) {
   const [query, setQuery] = useState("");
 
   const [llmAvailable, setLlmAvailable] = useState(false);
+  const [languages, setLanguages] = useState<string[]>([]);
+  const [transJob, setTransJob] = useState<TranslateJob | null>(null);
+  const translating = transJob?.status === "running";
+  const translatingRef = useRef(translating);
+  translatingRef.current = translating;
+  const transMenuRef = useRef<HTMLDetailsElement>(null);
   const [fixJob, setFixJob] = useState<FixJob | null>(null);
   const [reviewItems, setReviewItems] = useState<FixSuggestion[] | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -190,6 +199,12 @@ export default function Editor({ projectId }: { projectId: string }) {
         }
       })
       .catch(() => {});
+    api
+      .getTranslate(projectId)
+      .then((j) => {
+        if (alive && j.status === "running") setTransJob(j);
+      })
+      .catch(() => {});
     return () => {
       alive = false;
     };
@@ -214,7 +229,10 @@ export default function Editor({ projectId }: { projectId: string }) {
   useEffect(() => {
     api
       .getLlmStatus()
-      .then((s) => setLlmAvailable(s.available))
+      .then((s) => {
+        setLlmAvailable(s.available);
+        setLanguages(s.languages ?? []);
+      })
       .catch(() => {});
   }, []);
 
@@ -254,6 +272,45 @@ export default function Editor({ projectId }: { projectId: string }) {
     return () => clearInterval(timer);
   }, [fixJob?.status, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 翻譯是後端直接寫進 subtitles.json 的,前端只把 trans 併回來(按 id 對,
+  // 這樣使用者一邊翻一邊增刪句子也不會對錯行),原文以畫面上的為準。
+  const mergeTrans = useCallback(() => {
+    api
+      .getSubtitles(projectId)
+      .then((s) => {
+        const byId = new Map(s.segments.map((x) => [x.id, x.trans]));
+        setSegments((prev) => {
+          let changed = false;
+          const next = prev.map((seg) => {
+            const t = byId.get(seg.id);
+            if (t && seg.trans !== t) {
+              changed = true;
+              return { ...seg, trans: t };
+            }
+            return seg;
+          });
+          return changed ? next : prev;
+        });
+      })
+      .catch(() => {});
+  }, [projectId, setSegments]);
+
+  // 翻譯進行中輪詢:每批完成就把譯文併進來,使用者看得到它一段一段長出來
+  useEffect(() => {
+    if (!translating) return;
+    const timer = setInterval(() => {
+      api
+        .getTranslate(projectId)
+        .then((j) => {
+          setTransJob(j.status === "running" ? j : null);
+          mergeTrans();
+          if (j.status === "error") alert(`翻譯失敗:${j.error ?? "未知錯誤"}`);
+        })
+        .catch(() => {});
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [translating, projectId, mergeTrans]);
+
   // AI 校正時每秒跳動的計時器,讓使用者看得出工作還活著
   useEffect(() => {
     if (fixJob?.status !== "running") return;
@@ -277,6 +334,11 @@ export default function Editor({ projectId }: { projectId: string }) {
 
   // 自動存檔(0.8 秒沒動作就送出;失敗 3 秒後重試)
   const doSave = useCallback(() => {
+    if (translatingRef.current) {
+      // 翻譯期間後端正在寫同一份 subtitles.json,現在送出會蓋掉剛翻好的那批,先等它
+      saveTimer.current = window.setTimeout(doSave, 1500);
+      return;
+    }
     setSaveState("saving");
     api
       .saveSubtitles(projectId, segmentsRef.current, marksRef.current)
@@ -360,6 +422,19 @@ export default function Editor({ projectId }: { projectId: string }) {
         if (i < 0 || prev[i].text === draft) return prev;
         const next = [...prev];
         next[i] = { ...next[i], text: draft };
+        return next;
+      });
+    },
+    [setSegments]
+  );
+
+  const commitTrans = useCallback(
+    (id: string, text: string) => {
+      setSegments((prev) => {
+        const i = prev.findIndex((s) => s.id === id);
+        if (i < 0 || (prev[i].trans ?? "") === text) return prev;
+        const next = [...prev];
+        next[i] = { ...next[i], trans: text };
         return next;
       });
     },
@@ -661,6 +736,39 @@ export default function Editor({ projectId }: { projectId: string }) {
       .catch((e: Error) => alert(e.message));
   };
 
+  // ---- 翻譯 ----
+
+  const startTranslate = (target: string) => {
+    if (transMenuRef.current) transMenuRef.current.open = false;
+    // 先把未存的編輯沖掉,後端才會照最新的原文翻
+    window.clearTimeout(saveTimer.current);
+    api
+      .saveSubtitles(projectId, segmentsRef.current, marksRef.current)
+      .then(() => {
+        setSaveState("saved");
+        return api.startTranslate(projectId, target);
+      })
+      .then(setTransJob)
+      .catch((e: Error) => alert(e.message));
+  };
+
+  const cancelTranslate = () => {
+    api.cancelTranslate(projectId).catch(() => {});
+    setTransJob(null);
+  };
+
+  const clearTranslate = () => {
+    if (transMenuRef.current) transMenuRef.current.open = false;
+    if (!confirm("清除所有譯文?原文不受影響。")) return;
+    api
+      .clearTranslate(projectId)
+      .then(() => {
+        setTransJob(null);
+        setSegments((prev) => prev.map((s) => (s.trans ? { ...s, trans: undefined } : s)));
+      })
+      .catch((e: Error) => alert(e.message));
+  };
+
   const cancelFix = () => {
     if (!confirm("取消這次 AI 校正?")) return;
     api.cancelFix(projectId).catch(() => {});
@@ -947,6 +1055,30 @@ export default function Editor({ projectId }: { projectId: string }) {
           字幕外觀
         </button>
         {llmAvailable &&
+          languages.length > 0 &&
+          (translating ? (
+            <button className="btn small" onClick={cancelTranslate} title="點擊取消">
+              <span className="spinner" aria-hidden /> 翻譯中 {transJob?.done ?? 0}/
+              {transJob?.total ?? "?"}
+            </button>
+          ) : (
+            <details className="hotkey-menu" ref={transMenuRef}>
+              <summary className="btn small" title="翻成別的語言,原文與譯文一起顯示/燒錄">
+                翻譯
+              </summary>
+              <div className="hotkey-panel trans-panel">
+                {languages.map((lang) => (
+                  <button key={lang} className="trans-item" onClick={() => startTranslate(lang)}>
+                    翻成{lang}
+                  </button>
+                ))}
+                <button className="trans-item danger" onClick={clearTranslate}>
+                  清除譯文
+                </button>
+              </div>
+            </details>
+          ))}
+        {llmAvailable &&
           (fixJob?.status === "running" ? (
             <button className="btn small" onClick={cancelFix} title="點擊取消">
               <span className="spinner" aria-hidden /> AI 校正中 {fixJob.done ?? 0}/
@@ -999,22 +1131,12 @@ export default function Editor({ projectId }: { projectId: string }) {
                 className="subtitle-overlay"
                 style={videoRect ?? { left: 0, top: 0, right: 0, bottom: 0 }}
               >
-                <span
-                  className="subtitle-overlay-text"
-                  style={{
-                    fontFamily: `"${subStyle.font}"`,
-                    fontSize: (videoRect?.height ?? 0) * (subStyle.size / 100) || undefined,
-                    fontWeight: subStyle.bold ? 700 : 400,
-                    color: subStyle.color,
-                    bottom: `${subStyle.bottom}%`,
-                    WebkitTextStroke: `${
-                      (videoRect?.height ?? 0) * (subStyle.outline / 100)
-                    }px ${subStyle.outline_color}`,
-                    paintOrder: "stroke fill",
-                  }}
-                >
-                  {activeText}
-                </span>
+                <SubtitleLines
+                  style={subStyle}
+                  height={videoRect?.height ?? 0}
+                  text={activeText}
+                  trans={activeIdx >= 0 ? segments[activeIdx].trans : undefined}
+                />
               </div>
             )}
           </div>
@@ -1088,6 +1210,7 @@ export default function Editor({ projectId }: { projectId: string }) {
                   onMergeUp={handleMergeUp}
                   onTab={handleTab}
                   onDelete={deleteSegment}
+                  onTransCommit={commitTrans}
                 />
               ))
             )}
@@ -1378,6 +1501,7 @@ interface RowProps {
   onMergeUp: (id: string, draft: string) => void;
   onTab: (id: string, draft: string, dir: 1 | -1) => void;
   onDelete: (index: number) => void;
+  onTransCommit: (id: string, text: string) => void;
 }
 
 const Row = memo(function Row({
@@ -1395,6 +1519,7 @@ const Row = memo(function Row({
   onMergeUp,
   onTab,
   onDelete,
+  onTransCommit,
 }: RowProps) {
   const cls =
     "sub-row" + (isActive ? " active" : "") + (isSelected ? " selected" : "");
@@ -1436,9 +1561,39 @@ const Row = memo(function Row({
       >
         ✕
       </button>
+      {seg.trans !== undefined && (
+        <TransInput segId={seg.id} value={seg.trans} onCommit={onTransCommit} />
+      )}
     </div>
   );
 });
+
+/** 譯文那一行。翻譯本來就會想順手改字,所以直接可編輯;離開輸入框才進歷史。 */
+function TransInput({
+  segId,
+  value,
+  onCommit,
+}: {
+  segId: string;
+  value: string;
+  onCommit: (id: string, text: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <input
+      className="row-trans"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => onCommit(segId, draft)}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+      }}
+      aria-label="譯文"
+    />
+  );
+}
 
 function RowTextarea({
   segId,

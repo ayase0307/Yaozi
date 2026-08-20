@@ -16,15 +16,43 @@ _lock = threading.Lock()
 DEFAULTS = {
     "font": "Microsoft JhengHei",
     "size": 5.5,  # 字級,佔畫面高度 %
-    "color": "#FFFFFF",
-    "outline_color": "#000000",
-    "outline": 0.4,  # 外框粗細,佔畫面高度 %
-    "bottom": 9.0,  # 字幕底部離畫面底邊,佔畫面高度 %
     "bold": True,
+    "italic": False,
+    "spacing": 0.0,  # 字距,佔畫面高度 %
+    "color": "#FFFFFF",
+    # 邊框樣式:outline=描邊、box=整塊底框、none=什麼都不加
+    "border": "outline",
+    "outline": 0.4,  # 描邊粗細 /(底框模式時)文字到框邊的留白,佔畫面高度 %
+    "outline_color": "#000000",
+    "outline_opacity": 100,  # %,底框想半透明就調這個
+    "shadow": 0.2,  # 陰影位移,佔畫面高度 %
+    "shadow_color": "#000000",
+    "shadow_opacity": 60,  # %
+    "align": "center",  # left / center / right
+    "vertical": "bottom",  # top / bottom
+    "bottom": 9.0,  # 離上或下邊界,佔畫面高度 %
+    "side": 6.0,  # 左右留白,佔畫面寬度 %
+    "max_chars": 20,  # 每行最多幾字,超過就自動斷行;0 = 不斷行
 }
 
 # 數值上下限:超出範圍的字幕不是看不見就是蓋滿整個畫面
-_RANGES = {"size": (1.0, 20.0), "outline": (0.0, 3.0), "bottom": (0.0, 45.0)}
+_RANGES = {
+    "size": (1.0, 20.0),
+    "spacing": (0.0, 2.0),
+    "outline": (0.0, 3.0),
+    "shadow": (0.0, 3.0),
+    "bottom": (0.0, 45.0),
+    "side": (0.0, 40.0),
+    "outline_opacity": (0, 100),
+    "shadow_opacity": (0, 100),
+    "max_chars": (0, 60),
+}
+
+_CHOICES = {
+    "border": ("outline", "box", "none"),
+    "align": ("left", "center", "right"),
+    "vertical": ("top", "bottom"),
+}
 
 
 def clean(raw: dict) -> dict:
@@ -36,14 +64,19 @@ def clean(raw: dict) -> dict:
         out["font"] = font
     for key, (lo, hi) in _RANGES.items():
         try:
-            out[key] = round(min(max(float(raw[key]), lo), hi), 2)
+            value = min(max(float(raw[key]), lo), hi)
         except (KeyError, TypeError, ValueError):
-            pass
-    for key in ("color", "outline_color"):
+            continue
+        out[key] = int(round(value)) if isinstance(DEFAULTS[key], int) else round(value, 2)
+    for key in ("color", "outline_color", "shadow_color"):
         value = str(raw.get(key) or "")
         if re.fullmatch(r"#[0-9A-Fa-f]{6}", value):
             out[key] = value.upper()
-    out["bold"] = bool(raw.get("bold", DEFAULTS["bold"]))
+    for key, allowed in _CHOICES.items():
+        if raw.get(key) in allowed:
+            out[key] = raw[key]
+    for key in ("bold", "italic"):
+        out[key] = bool(raw.get(key, DEFAULTS[key]))
     return out
 
 

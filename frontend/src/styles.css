@@ -318,38 +318,65 @@ button {
 
 /* ---- 首頁主視覺 ---- */
 
+/* 整條橫幅:負邊距把 .home 的內距吃掉,圖直接貼到視窗兩側 */
 .hero {
+  position: relative;
+  margin: -36px calc(-1 * clamp(20px, 6vw, 72px)) 32px;
+  padding: clamp(36px, 6vw, 76px) clamp(20px, 6vw, 72px);
+  min-height: clamp(240px, 28vw, 380px);
   display: flex;
   align-items: center;
-  gap: clamp(20px, 4vw, 56px);
-  margin-bottom: 28px;
+  overflow: hidden;
+  /* 沒放圖也不會開天窗 */
+  background: linear-gradient(100deg, var(--green-ink), #14400a 55%, #1d6b0c);
+  color: #f4fbf0;
+}
+
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 70% center;
+}
+
+/* 左深右透的遮罩,圖再花文字都讀得到 */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    95deg,
+    rgba(7, 24, 3, 0.94) 0%,
+    rgba(7, 24, 3, 0.78) 34%,
+    rgba(7, 24, 3, 0.2) 68%,
+    rgba(7, 24, 3, 0) 100%
+  );
 }
 
 .hero-copy {
-  flex: 1;
-  min-width: 0;
+  position: relative;
+  z-index: 2;
+  max-width: 40ch;
 }
 
 .hero-title {
   margin: 0;
-  font-size: clamp(28px, 4vw, 46px);
+  font-size: clamp(30px, 4.6vw, 54px);
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1.16;
   letter-spacing: -0.01em;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.4);
 }
 
 .hero-sub {
-  margin: 14px 0 0;
-  max-width: 46ch;
-  color: var(--muted);
+  margin: 16px 0 0;
+  max-width: 44ch;
+  color: #cfe4c6;
   font-size: 14.5px;
-}
-
-/* 插圖是裝飾,窄畫面直接讓路給文案 */
-.hero-art {
-  width: clamp(180px, 30vw, 340px);
-  height: auto;
-  flex-shrink: 0;
+  line-height: 1.75;
 }
 
 .empty-state {
@@ -411,13 +438,60 @@ button {
   font-size: 14px;
 }
 
-/* 刻意讓怪獸超出區塊上下緣,才有衝出畫面的力道 */
+.mascot-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.mascot-tags span {
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: #d7ecce;
+}
+
+/* 刻意讓圖超出區塊上下緣並貼到右邊界,右半邊才不會空 */
 .mascot-art {
-  width: clamp(160px, 28vw, 330px);
+  width: clamp(200px, 42vw, 480px);
   height: auto;
   flex-shrink: 0;
-  margin: clamp(-40px, -4vw, -12px) 0;
+  margin: clamp(-56px, -6vw, -24px) clamp(-44px, -4vw, -24px) clamp(-56px, -6vw, -24px) 0;
   filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.35));
+}
+
+/* ---- 貼網址下載 ---- */
+
+.url-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.url-label {
+  color: var(--muted);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.url-input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel);
+  font-family: var(--sans);
+  font-size: 13.5px;
+}
+
+.url-input:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft);
 }
 
 /* ---- 字型選單 ---- */
@@ -637,13 +711,43 @@ button {
   background: linear-gradient(160deg, #f0ece2, #cfd6cb 55%, #b9c4b6);
 }
 
-.style-sim-text {
-  position: absolute;
-  left: 6%;
-  right: 6%;
-  text-align: center;
-  line-height: 1.35;
-  word-break: break-word;
+.style-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 2px 0;
+}
+
+.style-seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.style-seg-btn {
+  padding: 5px 10px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.style-seg-btn:last-child {
+  border-right: 0;
+}
+
+.style-seg-btn.on {
+  background: var(--green);
+  color: #fff;
+  font-weight: 650;
+}
+
+.style-inline-hint {
+  flex: 1;
+  text-align: right;
 }
 
 .dropzone {
@@ -961,13 +1065,12 @@ button {
   pointer-events: none;
 }
 
-.subtitle-overlay-text {
-  position: absolute;
-  left: 6%;
-  right: 6%;
-  text-align: center;
+/* 字幕渲染(影片上的預覽 + 設定頁模擬區共用);位置與尺寸由 subStyleCss 內嵌 */
+.sub-render-line {
   line-height: 1.35;
   word-break: break-word;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 /* ---- 字幕列表 ---- */
@@ -1090,6 +1193,60 @@ button {
 
 .row-delete:hover {
   background: #fde3e3;
+  color: var(--danger);
+}
+
+/* 譯文獨立佔一行,對齊原文那一欄 */
+.row-trans {
+  grid-column: 2 / 3;
+  width: 100%;
+  margin-top: -2px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  color: var(--green-dark);
+}
+
+.row-trans:hover {
+  border-color: var(--line);
+}
+
+.row-trans:focus {
+  outline: none;
+  background: #fff;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+
+.trans-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 6px;
+}
+
+.trans-item {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-family: var(--sans);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trans-item:hover {
+  background: var(--green-soft);
+}
+
+.trans-item.danger {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
   color: var(--danger);
 }
 

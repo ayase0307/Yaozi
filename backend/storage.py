@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import config
 
-RUNNING_STATUSES = {"extracting", "loading_model", "transcribing", "converting"}
+RUNNING_STATUSES = {"downloading", "extracting", "loading_model", "transcribing", "converting"}
 
 # Windows 上 os.replace 的目標檔若正被另一個執行緒讀取會拒絕存取,
 # 所以所有 JSON 讀寫共用一把鎖,寫入失敗再小睡重試(擋外部程式如備份軟體)。

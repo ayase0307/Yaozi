@@ -6,6 +6,7 @@ import type {
   Project,
   Segment,
   SubtitleStyle,
+  TranslateJob,
 } from "./types";
 
 async function json<T>(res: Response): Promise<T> {
@@ -26,6 +27,13 @@ export const api = {
     fetch("/api/health").then((r) => json<{ ffmpeg: boolean; claude: boolean }>(r)),
 
   listProjects: () => fetch("/api/projects").then((r) => json<Project[]>(r)),
+
+  createFromUrl: (url: string) =>
+    fetch("/api/projects/url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }).then((r) => json<Project>(r)),
 
   getProject: (id: string) => fetch(`/api/projects/${id}`).then((r) => json<Project>(r)),
 
@@ -84,7 +92,30 @@ export const api = {
     }).then((r) => json<SubtitleStyle>(r)),
 
   getLlmStatus: () =>
-    fetch("/api/llm/status").then((r) => json<{ available: boolean }>(r)),
+    fetch("/api/llm/status").then((r) =>
+      json<{ available: boolean; languages: string[]; yt_dlp: boolean }>(r)
+    ),
+
+  startTranslate: (id: string, target: string) =>
+    fetch(`/api/projects/${id}/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target }),
+    }).then((r) => json<TranslateJob>(r)),
+
+  getTranslate: (id: string) =>
+    fetch(`/api/projects/${id}/translate`).then((r) => json<TranslateJob>(r)),
+
+  cancelTranslate: (id: string) =>
+    fetch(`/api/projects/${id}/translate`, { method: "DELETE" }).then((r) =>
+      json<TranslateJob>(r)
+    ),
+
+  /** 把所有譯文清掉,回到單語字幕。 */
+  clearTranslate: (id: string) =>
+    fetch(`/api/projects/${id}/translate?clear=true`, { method: "DELETE" }).then((r) =>
+      json<TranslateJob>(r)
+    ),
 
   startFix: (id: string) =>
     fetch(`/api/projects/${id}/fix`, { method: "POST" }).then((r) => json<FixJob>(r)),

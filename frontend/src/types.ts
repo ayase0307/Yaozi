@@ -10,6 +10,8 @@ export interface Segment {
   end: number;
   text: string;
   words?: Word[];
+  /** 譯文。有值才算雙語字幕,燒錄與雙語 SRT 會多印一行。 */
+  trans?: string;
 }
 
 export interface Project {
@@ -18,6 +20,7 @@ export interface Project {
   created_at: number;
   media_file: string;
   status:
+    | "downloading"
     | "uploaded"
     | "extracting"
     | "loading_model"
@@ -39,11 +42,22 @@ export interface Project {
 export interface SubtitleStyle {
   font: string;
   size: number;
-  color: string;
-  outline_color: string;
-  outline: number;
-  bottom: number;
   bold: boolean;
+  italic: boolean;
+  spacing: number;
+  color: string;
+  border: "outline" | "box" | "none";
+  outline: number;
+  outline_color: string;
+  outline_opacity: number;
+  shadow: number;
+  shadow_color: string;
+  shadow_opacity: number;
+  align: "left" | "center" | "right";
+  vertical: "top" | "bottom";
+  bottom: number;
+  side: number;
+  max_chars: number;
 }
 
 /** 依語系分好的字型清單,後端排好順序(中文在最前面)。 */
@@ -73,6 +87,15 @@ export interface FixJob {
   started_at?: number;
 }
 
+export interface TranslateJob {
+  status: "idle" | "running" | "done" | "error" | "canceled";
+  total?: number;
+  done?: number;
+  target?: string;
+  error?: string | null;
+  started_at?: number;
+}
+
 export interface BurnJob {
   status: "idle" | "running" | "done" | "error" | "canceled";
   progress: number;
@@ -81,6 +104,7 @@ export interface BurnJob {
 }
 
 export const RUNNING_STATUSES: Project["status"][] = [
+  "downloading",
   "uploaded",
   "extracting",
   "loading_model",
@@ -90,6 +114,8 @@ export const RUNNING_STATUSES: Project["status"][] = [
 
 export function statusLabel(p: Project): string {
   switch (p.status) {
+    case "downloading":
+      return "下載影片中";
     case "uploaded":
       return "等待辨識";
     case "extracting":

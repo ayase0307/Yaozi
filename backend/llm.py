@@ -16,7 +16,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import storage
+from . import dictionary, storage
 
 MODEL = os.environ.get("VIDSCRIBE_FIX_MODEL", "sonnet")
 BATCH_CHARS = 4000  # 每批的字元預算
@@ -56,6 +56,22 @@ PROMPT = """你是台灣的專業字幕校對員。最後面附上一段影片�
 - 字數盡量與原文相近,禁止重寫句子
 - 標點維持原樣,不要新增句尾標點
 用 changes 回傳:i 是原行號,t 是修正後的整行文字。整批都沒錯就回傳空的 changes。"""
+
+
+def _terms_block() -> str:
+    """把詞庫塞進提示詞。
+
+    詞庫本身只做字面取代,碰不到「同音但寫法不同」的漏網之魚;但它等於是使用者
+    親手列的專有名詞表,讓 LLM 知道這支影片會出現哪些詞,同音錯字的命中率差很多。
+    """
+    entries = dictionary.load()[:200]
+    if not entries:
+        return ""
+    pairs = "、".join(f"{e['wrong']}→{e['right']}" for e in entries)
+    return (
+        "\n\n這支影片的專有名詞對照(使用者自訂的詞庫,右邊才是正確寫法,"
+        f"看到左邊或其他同音寫法都要改成右邊):\n{pairs}"
+    )
 
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
@@ -207,7 +223,7 @@ def _run_batch(cmd: list[str], segments: list[dict], indices: list[int]) -> list
             "--json-schema", SCHEMA,
             "--model", MODEL,
         ],
-        input=f"{PROMPT}\n\n字幕內容:\n{payload}",
+        input=f"{PROMPT}{_terms_block()}\n\n字幕內容:\n{payload}",
         capture_output=True,
         text=True,
         encoding="utf-8",

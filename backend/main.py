@@ -16,11 +16,13 @@ from . import (
     cuts,
     dictionary,
     exporter,
+    fetcher,
     fonts,
     llm,
     storage,
     style,
     transcriber,
+    translate,
     waveform,
 )
 
@@ -107,6 +109,22 @@ def create_project(file: UploadFile = File(...)):
         raise HTTPException(500, "檔案儲存失敗")
     transcriber.start_job(meta["id"])
     return storage.load_project(meta["id"])
+
+
+@app.post("/api/projects/url")
+def create_project_from_url(body: dict = Body(...)):
+    url = (body.get("url") or "").strip()
+    # 只放行 http(s):yt-dlp 也吃 file:// 之類的 scheme,不擋等於開了讀本機檔的後門
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "請貼 http/https 開頭的影片網址")
+    if not fetcher.available():
+        raise HTTPException(503, "找不到 yt-dlp,請重跑 setup.bat 安裝")
+    try:
+        return fetcher.start(url)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, f"讀取網址失敗:{str(e)[:200]}")
 
 
 @app.get("/api/projects/{pid}")
@@ -251,7 +269,35 @@ def put_style(body: dict = Body(...)):
 
 @app.get("/api/llm/status")
 def llm_status():
-    return {"available": llm.find_claude() is not None}
+    return {
+        "available": llm.find_claude() is not None,
+        "languages": translate.LANGUAGES,
+        "yt_dlp": fetcher.available(),
+    }
+
+
+@app.post("/api/projects/{pid}/translate")
+def start_translate(pid: str, body: dict = Body(...)):
+    _get_project_or_404(pid)
+    try:
+        return translate.start(pid, (body.get("target") or "").strip())
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/projects/{pid}/translate")
+def translate_state(pid: str):
+    _get_project_or_404(pid)
+    return translate.get_state(pid)
+
+
+@app.delete("/api/projects/{pid}/translate")
+def stop_translate(pid: str, clear: bool = False):
+    _get_project_or_404(pid)
+    if clear:
+        return translate.clear(pid)
+    translate.cancel(pid)
+    return {"status": "idle"}
 
 
 @app.post("/api/projects/{pid}/fix")

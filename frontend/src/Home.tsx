@@ -25,12 +25,19 @@ export default function Home() {
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [dragging, setDragging] = useState(false);
   const [ffmpegOk, setFfmpegOk] = useState(true);
+  const [ytOk, setYtOk] = useState(false);
+  const [url, setUrl] = useState("");
+  const [urlBusy, setUrlBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api
       .getHealth()
       .then((h) => setFfmpegOk(h.ffmpeg))
+      .catch(() => {});
+    api
+      .getLlmStatus()
+      .then((s) => setYtOk(s.yt_dlp))
       .catch(() => {});
   }, []);
 
@@ -64,6 +71,21 @@ export default function Home() {
     [refresh]
   );
 
+  const submitUrl = (e: React.FormEvent) => {
+    e.preventDefault();
+    const link = url.trim();
+    if (!link || urlBusy) return;
+    setUrlBusy(true);
+    api
+      .createFromUrl(link)
+      .then(() => {
+        setUrl("");
+        refresh();
+      })
+      .catch((err: Error) => alert(err.message))
+      .finally(() => setUrlBusy(false));
+  };
+
   const deleteProject = (p: Project) => {
     if (!confirm(`刪除「${p.name}」?專案裡的媒體檔和字幕都會一併刪除。`)) return;
     api.deleteProject(p.id).then(refresh).catch((e: Error) => alert(e.message));
@@ -90,6 +112,7 @@ export default function Home() {
         )}
 
         <section className="hero">
+          <Illustration name="banner" className="hero-bg" />
           <div className="hero-copy">
             <h1 className="hero-title">
               打字幕
@@ -101,7 +124,6 @@ export default function Home() {
               全程在這台電腦上跑,不上傳、不需要帳號。
             </p>
           </div>
-          <Illustration name="hero" className="hero-art" />
         </section>
 
         <div
@@ -137,6 +159,23 @@ export default function Home() {
             }}
           />
         </div>
+
+        {ytOk && (
+          <form className="url-form" onSubmit={submitUrl}>
+            <span className="url-label">或貼網址</span>
+            <input
+              className="url-input"
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=…"
+              aria-label="影片網址"
+            />
+            <button className="btn primary" type="submit" disabled={!url.trim() || urlBusy}>
+              {urlBusy ? "讀取中…" : "下載並辨識"}
+            </button>
+          </form>
+        )}
 
         {uploads.length > 0 && (
           <section className="upload-list">
@@ -222,8 +261,13 @@ export default function Home() {
             <p className="mascot-sub">
               辨識、校對、燒錄都在這台電腦跑完。沒有上傳、沒有帳號、沒有月費。
             </p>
+            <div className="mascot-tags">
+              <span>faster-whisper large-v3</span>
+              <span>本機 GPU 加速</span>
+              <span>檔案留在硬碟裡</span>
+            </div>
           </div>
-          <Illustration name="mascot" className="mascot-art" />
+          <Illustration name="offline" className="mascot-art" />
         </section>
       </main>
     </div>

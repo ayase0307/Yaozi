@@ -56,6 +56,47 @@ def test_to_ass_without_style_falls_back_to_defaults():
     assert f"Style: Default,{style.DEFAULTS['font']}," in out
 
 
+def test_ass_color_opacity_is_inverted_alpha():
+    # ASS 的 AA 是「透明度」:100% 不透明 = 00,0% = FF
+    assert exporter._ass_color("#000000", 100) == "&H00000000"
+    assert exporter._ass_color("#000000", 0) == "&HFF000000"
+    assert exporter._ass_color("#000000", 60) == "&H66000000"
+
+
+def test_to_ass_box_and_alignment():
+    st = style.clean({"border": "box", "align": "left", "vertical": "top", "outline": 1.0})
+    out = exporter.to_ass([{"start": 0, "end": 1, "text": "測試"}], 1920, 1080, st)
+    line = next(x for x in out.splitlines() if x.startswith("Style:"))
+    fields = line.split(",")
+    assert fields[15] == "3", fields  # BorderStyle=3 才是整塊底框
+    assert fields[16] == "11", fields  # 1080 的 1% 當框內距
+    assert fields[18] == "7", fields  # 左上 = 7
+    # 邊框關掉時粗細必須歸零,否則 libass 照樣描邊
+    none_out = exporter.to_ass(
+        [{"start": 0, "end": 1, "text": "測試"}], 1920, 1080, style.clean({"border": "none"})
+    )
+    assert next(x for x in none_out.splitlines() if x.startswith("Style:")).split(",")[16] == "0"
+
+
+def test_wrap_text():
+    assert exporter.wrap_text("短句", 20) == ["短句"]
+    assert exporter.wrap_text("很長的一句話", 0) == ["很長的一句話"]  # 0 = 不斷行
+    # 兩行內優先斷在標點後面
+    assert exporter.wrap_text("今天天氣很好,我們出去走走吧", 10) == ["今天天氣很好,", "我們出去走走吧"]
+    # 沒有標點就對半切
+    assert exporter.wrap_text("一二三四五六七八", 5) == ["一二三四", "五六七八"]
+    # 超過兩行就照字數硬切,每行都不超過上限
+    assert all(len(x) <= 6 for x in exporter.wrap_text("一二三四五六七八九十" * 3, 6))
+
+
+def test_to_ass_bilingual_and_wrapping():
+    st = style.clean({"max_chars": 6})
+    seg = [{"start": 0, "end": 1, "text": "一二三四五六七八", "trans": "abcdefghij"}]
+    event = exporter.to_ass(seg, 1920, 1080, st).strip().splitlines()[-1]
+    assert event.count("\\N") == 3, event  # 原文 2 行 + 譯文 2 行 = 3 個換行
+    assert exporter.to_srt_bi(seg).count("\n一二三四五六七八\nabcdefghij") == 1
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
