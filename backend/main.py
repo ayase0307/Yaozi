@@ -134,12 +134,16 @@ def get_project(pid: str):
 
 
 @app.patch("/api/projects/{pid}")
-def rename_project(pid: str, body: dict = Body(...)):
+def patch_project(pid: str, body: dict = Body(...)):
+    """改專案名或剪輯範圍。只送有帶的欄位,沒帶的不動。"""
     meta = _get_project_or_404(pid)
-    name = (body.get("name") or "").strip()
-    if not name:
-        raise HTTPException(400, "名稱不可為空")
-    meta["name"] = name
+    if "name" in body:
+        name = (body.get("name") or "").strip()
+        if not name:
+            raise HTTPException(400, "名稱不可為空")
+        meta["name"] = name[:200]
+    if "trim" in body:
+        meta["trim"] = storage.clean_trim(body["trim"], meta.get("duration"))
     storage.save_project(meta)
     return meta
 
@@ -371,8 +375,10 @@ def get_media(pid: str):
 def export_subtitles(pid: str, format: str = "srt"):
     meta = _get_project_or_404(pid)
     subs = storage.load_subtitles(pid)
+    # 有設剪輯範圍就跟著裁,不然匯出的字幕會對不上剪過的成品影片
+    segments = storage.apply_trim(subs["segments"], meta.get("trim"))
     try:
-        filename, content, mime = exporter.export(subs["segments"], format, meta["name"])
+        filename, content, mime = exporter.export(segments, format, meta["name"])
     except ValueError as e:
         raise HTTPException(400, str(e))
     headers = {

@@ -5,6 +5,7 @@
 node_modules/
 __pycache__/
 *.pyc
+.serena/
 
 # 使用者資料與模型(不進版控)
 projects/

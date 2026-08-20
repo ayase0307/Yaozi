@@ -36,6 +36,8 @@ export interface Project {
   has_video: boolean | null;
   model: string;
   device: string | null;
+  /** 剪輯範圍(秒)。null = 整支影片。燒錄與匯出字幕都只出這一段。 */
+  trim: { start: number; end: number } | null;
 }
 
 /** 字幕外觀。size / outline / bottom 都是「佔畫面高度的百分比」,換解析度不用重設。 */
@@ -58,6 +60,13 @@ export interface SubtitleStyle {
   bottom: number;
   side: number;
   max_chars: number;
+  /** 譯文專用。font 留空、size 給 0 都代表沿用原文;gap 是兩行之間的距離。 */
+  trans_font: string;
+  trans_size: number;
+  trans_color: string;
+  trans_bold: boolean;
+  trans_italic: boolean;
+  trans_gap: number;
 }
 
 /** 辨識設定(全域)。language 是 Whisper 語言代碼,"auto" 為自動偵測。 */
@@ -66,6 +75,8 @@ export interface AsrSettings {
   prompt: string;
   vad: boolean;
   vad_threshold: number;
+  /** 一句超過幾個字就照單字時間戳自動切開;0 = 不切。 */
+  split_chars: number;
 }
 
 /** 依語系分好的字型清單,後端排好順序(中文在最前面)。 */

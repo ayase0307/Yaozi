@@ -79,6 +79,18 @@ export function subStyleCss(
   };
 }
 
+/** 譯文的樣式:沒特別指定的欄位沿用原文,跟 backend/style.py 的 trans_of 一致。 */
+export function transStyle(st: SubtitleStyle): SubtitleStyle {
+  return {
+    ...st,
+    font: st.trans_font || st.font,
+    size: st.trans_size || st.size,
+    color: st.trans_color,
+    bold: st.trans_bold,
+    italic: st.trans_italic,
+  };
+}
+
 /** 照設定把一句(含譯文)畫出來——影片上的即時預覽與設定頁的模擬區共用。 */
 export function SubtitleLines({
   style,
@@ -92,15 +104,27 @@ export function SubtitleLines({
   trans?: string;
 }) {
   const css = subStyleCss(style, height);
-  const lines = wrapText(text, style.max_chars);
-  if (trans) lines.push(...wrapText(trans, style.max_chars));
+  const tcss = subStyleCss(transStyle(style), height);
   return (
     <div className="sub-render" style={css.wrap}>
-      {lines.map((l, i) => (
+      {wrapText(text, style.max_chars).map((l, i) => (
         <span key={i} className="sub-render-line" style={css.line}>
           {l}
         </span>
       ))}
+      {trans && (
+        // 間距做在譯文那一塊上面,原文只有一行時也不會多出空隙
+        <div
+          className="sub-render-trans"
+          style={{ ...css.wrap, position: "static", marginTop: (height * style.trans_gap) / 100 }}
+        >
+          {wrapText(trans, style.max_chars).map((l, i) => (
+            <span key={i} className="sub-render-line" style={tcss.line}>
+              {l}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -280,6 +304,66 @@ export default function StyleControls({
         onChange={(max_chars) => update({ max_chars })}
       />
 
+      <div className="style-divider" />
+
+      <div className="style-row">
+        <span className="style-label">譯文</span>
+        <span className="style-hint style-inline-hint">
+          雙語字幕的第二行。邊框、陰影、對齊跟原文共用。
+        </span>
+      </div>
+      <div className="style-row">
+        <span className="style-label">字型</span>
+        <FontPicker
+          value={value.trans_font}
+          onChange={(trans_font) => update({ trans_font })}
+          placeholder="同原文"
+        />
+      </div>
+      <div className="style-row">
+        <span className="style-label">顏色</span>
+        <input
+          type="color"
+          className="style-color"
+          value={value.trans_color}
+          onChange={(e) => update({ trans_color: e.target.value })}
+          aria-label="譯文顏色"
+        />
+        <label className="style-check">
+          <input
+            type="checkbox"
+            checked={value.trans_bold}
+            onChange={(e) => update({ trans_bold: e.target.checked })}
+          />
+          粗體
+        </label>
+        <label className="style-check">
+          <input
+            type="checkbox"
+            checked={value.trans_italic}
+            onChange={(e) => update({ trans_italic: e.target.checked })}
+          />
+          斜體
+        </label>
+      </div>
+      <Slider
+        label="字級"
+        value={value.trans_size}
+        min={0}
+        max={14}
+        step={0.1}
+        unit={value.trans_size === 0 ? "同原文" : "% 畫面高"}
+        onChange={(trans_size) => update({ trans_size })}
+      />
+      <Slider
+        label="行間距"
+        value={value.trans_gap}
+        min={0}
+        max={6}
+        step={0.1}
+        onChange={(trans_gap) => update({ trans_gap })}
+      />
+
       <StyleSim value={value} />
 
       <p className="style-hint">
@@ -291,10 +375,11 @@ export default function StyleControls({
   );
 }
 
+// 雙語那句放第一個:譯文的字級、顏色、行間距要看得到才調得動
 const SAMPLES: { text: string; trans?: string }[] = [
+  { text: "今天我們來聊聊這個做法為什麼有效", trans: "Today we'll talk about why this works" },
   { text: "這是字幕的模擬預覽,字級、邊框、位置都照實際比例換算" },
   { text: "字距、底框、陰影都可以在這裡先看過再燒錄" },
-  { text: "今天我們來聊聊這個做法為什麼有效", trans: "Today we'll talk about why this works" },
   { text: "Mixed 中英 123 測試 ABC" },
 ];
 

@@ -136,6 +136,22 @@ export default function Editor({ projectId }: { projectId: string }) {
 
   const running = project ? RUNNING_STATUSES.includes(project.status) : false;
 
+  const rename = useCallback(
+    (name: string) => {
+      setProject((p) => (p ? { ...p, name } : p));
+      api.patchProject(projectId, { name }).then(setProject).catch(() => {});
+    },
+    [projectId]
+  );
+
+  const setTrim = useCallback(
+    (trim: Project["trim"]) => {
+      setProject((p) => (p ? { ...p, trim } : p));
+      api.patchProject(projectId, { trim }).then(setProject).catch(() => {});
+    },
+    [projectId]
+  );
+
   const loadSubtitles = useCallback(() => {
     api.getSubtitles(projectId).then((s) => {
       justLoadedRef.current = s.segments;
@@ -312,13 +328,13 @@ export default function Editor({ projectId }: { projectId: string }) {
     return () => clearInterval(timer);
   }, [translating, projectId, mergeTrans]);
 
-  // AI 校正時每秒跳動的計時器,讓使用者看得出工作還活著
+  // AI 校正、辨識進行時每秒跳動的計時器,讓使用者看得出工作還活著
   useEffect(() => {
-    if (fixJob?.status !== "running") return;
+    if (fixJob?.status !== "running" && !running) return;
     setNowTick(Date.now());
     const timer = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [fixJob?.status]);
+  }, [fixJob?.status, running]);
 
   // 播放中用 rAF 平滑更新時間(timeupdate 只有 4Hz,播放頭會頓)
   useEffect(() => {
@@ -655,6 +671,21 @@ export default function Editor({ projectId }: { projectId: string }) {
         }
         return;
       }
+      if ((key === "i" || key === "o") && !ctrl) {
+        e.preventDefault();
+        const t = videoRef.current?.currentTime ?? 0;
+        setProject((p) => {
+          if (!p?.duration) return p;
+          const a = key === "i" ? t : (p.trim?.start ?? 0);
+          const b = key === "o" ? t : (p.trim?.end ?? p.duration);
+          const lo = Math.max(0, Math.min(a, b - 0.5));
+          const hi = Math.min(p.duration, Math.max(b, lo + 0.5));
+          const trim = lo <= 0 && hi >= p.duration - 0.01 ? null : { start: lo, end: hi };
+          api.patchProject(projectId, { trim }).catch(() => {});
+          return { ...p, trim };
+        });
+        return;
+      }
       if (e.key === "Delete") {
         const i = selectedIdxRef.current;
         if (i >= 0) {
@@ -688,7 +719,7 @@ export default function Editor({ projectId }: { projectId: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, seekTo, togglePlay, setSegments, deleteSegment]);
+  }, [undo, redo, seekTo, togglePlay, setSegments, deleteSegment, projectId]);
 
   const activeIdx = useMemo(() => activeIndexAt(segments, currentTime), [segments, currentTime]);
 
@@ -954,24 +985,14 @@ export default function Editor({ projectId }: { projectId: string }) {
   if (running || project.status !== "done") {
     return (
       <div className="page">
-        <EditorTopbar project={project} saveState="saved" projectId={projectId} />
+        <EditorTopbar
+          project={project}
+          saveState="saved"
+          projectId={projectId}
+          onRename={rename}
+        />
         <main className="editor-message">
-          {running && <span className="spinner big" aria-hidden />}
-          <p className="status-title">{statusLabel(project)}</p>
-          {project.status === "transcribing" && (
-            <span className="bar wide">
-              <span className="bar-fill" style={{ width: `${project.progress * 100}%` }} />
-            </span>
-          )}
-          {project.device === "cpu" && running && (
-            <p className="hint">目前用 CPU 辨識(GPU 未啟用),速度會比較慢。</p>
-          )}
-          {project.error && <p className="error-text">{project.error}</p>}
-          {(project.status === "error" || project.status === "interrupted") && (
-            <button className="btn" onClick={retranscribe}>
-              重新辨識
-            </button>
-          )}
+          <ProgressCard project={project} now={nowTick} onRetry={retranscribe} />
         </main>
       </div>
     );
@@ -987,6 +1008,7 @@ export default function Editor({ projectId }: { projectId: string }) {
         projectId={projectId}
         exportMenuRef={exportMenuRef}
         onBurn={startBurn}
+        onRename={rename}
       />
 
       {peaks && project.duration ? (
@@ -1008,6 +1030,7 @@ export default function Editor({ projectId }: { projectId: string }) {
           onSelect={setSelectedIdx}
           onCommitTimes={handleCommitTimes}
           onCreate={handleCreate}
+          trim={project.trim}
         />
       ) : (
         <div className="wave-strip wave-loading">波形載入中…</div>
@@ -1037,6 +1060,14 @@ export default function Editor({ projectId }: { projectId: string }) {
             {project.duration ? formatTime(project.duration) : "--:--"}
           </span>
         </span>
+        <span className="toolbar-sep" aria-hidden />
+        <TrimControls
+          trim={project.trim}
+          currentTime={currentTime}
+          duration={project.duration ?? 0}
+          onChange={setTrim}
+          onSeek={seekTo}
+        />
         <span className="toolbar-sep" aria-hidden />
         <button className="icon-btn" onClick={undo} title="復原 (Ctrl+Z)">
           ↺
@@ -1427,18 +1458,201 @@ export default function Editor({ projectId }: { projectId: string }) {
   );
 }
 
+/** 剪輯範圍:設起點/終點,燒錄與匯出字幕都只出這一段。整段刪除、多段拼接不做。 */
+function TrimControls({
+  trim,
+  currentTime,
+  duration,
+  onChange,
+  onSeek,
+}: {
+  trim: Project["trim"];
+  currentTime: number;
+  duration: number;
+  onChange: (t: Project["trim"]) => void;
+  onSeek: (t: number) => void;
+}) {
+  const start = trim?.start ?? 0;
+  const end = trim?.end ?? duration;
+  const set = (a: number, b: number) => {
+    const lo = Math.max(0, Math.min(a, b - 0.5));
+    const hi = Math.min(duration, Math.max(b, lo + 0.5));
+    onChange(lo <= 0 && hi >= duration - 0.01 ? null : { start: lo, end: hi });
+  };
+  return (
+    <span className="trim-controls">
+      <button
+        className="icon-btn"
+        onClick={() => set(currentTime, end)}
+        title="把目前位置設成剪輯起點 (I)"
+      >
+        ⟦
+      </button>
+      <button
+        className="icon-btn"
+        onClick={() => set(start, currentTime)}
+        title="把目前位置設成剪輯終點 (O)"
+      >
+        ⟧
+      </button>
+      {trim ? (
+        <>
+          <button
+            className="trim-range mono"
+            onClick={() => onSeek(trim.start)}
+            title="跳到剪輯起點"
+          >
+            {formatTime(trim.start)}–{formatTime(trim.end)}
+          </button>
+          <button className="icon-btn" onClick={() => onChange(null)} title="取消剪輯,恢復整支影片">
+            ✕
+          </button>
+        </>
+      ) : (
+        <span className="trim-hint">整支</span>
+      )}
+    </span>
+  );
+}
+
+// 辨識的階段順序。status 落在哪一格,前面的就是做完的、後面的是還沒開始的。
+const STAGES: { keys: Project["status"][]; label: string; note: string }[] = [
+  { keys: ["downloading"], label: "下載影片", note: "從網址抓原始檔" },
+  { keys: ["uploaded", "extracting"], label: "抽出聲音", note: "轉成辨識用的音軌" },
+  { keys: ["loading_model"], label: "載入模型", note: "第一次會下載,要幾分鐘" },
+  { keys: ["transcribing"], label: "聽打中", note: "faster-whisper 逐句辨識" },
+  { keys: ["converting"], label: "斷句潤飾", note: "轉繁體、切開太長的句子" },
+];
+
+function elapsed(sec: number): string {
+  const m = Math.floor(sec / 60);
+  return `${m}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+}
+
+/** 辨識進行中的畫面:看得出現在走到哪一步、已經跑了多久。 */
+function ProgressCard({
+  project,
+  now,
+  onRetry,
+}: {
+  project: Project;
+  now: number;
+  onRetry: () => void;
+}) {
+  // 這一輪從什麼時候開始算——後端沒記,以打開這個畫面的時間為準就夠用了
+  const [since] = useState(() => Date.now());
+  const failed = project.status === "error" || project.status === "interrupted";
+  const current = STAGES.findIndex((s) => s.keys.includes(project.status));
+  const at = project.status === "done" ? STAGES.length : current < 0 ? 0 : current;
+
+  return (
+    <div className="progress-card">
+      <div className="progress-head">
+        <span className={"progress-tag" + (failed ? " failed" : "")}>
+          <span className="progress-dot" aria-hidden />
+          {failed ? "已中斷" : "製作中"}
+        </span>
+        <span className="progress-elapsed mono">
+          已經 {elapsed((now - since) / 1000)}
+        </span>
+      </div>
+      <h2 className="progress-title">{failed ? statusLabel(project) : "字幕製作中"}</h2>
+      <p className="progress-sub">
+        {failed
+          ? "從失敗的地方重跑就好,原本的字幕會先備份起來。"
+          : "可以先去做別的事——這頁會自己更新,做完直接進編輯器。"}
+      </p>
+
+      <ol className="stage-list">
+        {STAGES.map((s, i) => {
+          const state = failed && i === at ? "failed" : i < at ? "done" : i === at ? "now" : "todo";
+          return (
+            <li key={s.label} className={"stage stage-" + state}>
+              <span className="stage-mark" aria-hidden />
+              <span className="stage-label">{s.label}</span>
+              <span className="stage-note">{s.note}</span>
+              {state === "now" && project.status === "transcribing" && (
+                <span className="stage-pct mono">{Math.round(project.progress * 100)}%</span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+
+      {project.status === "transcribing" && (
+        <span className="bar wide">
+          <span className="bar-fill" style={{ width: `${project.progress * 100}%` }} />
+        </span>
+      )}
+      {project.device === "cpu" && !failed && (
+        <p className="hint">目前用 CPU 辨識(GPU 未啟用),速度會比較慢。</p>
+      )}
+      {project.error && <p className="error-text">{project.error}</p>}
+      {failed && (
+        <button className="btn" onClick={onRetry}>
+          重新辨識
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** 專案名。點一下就地改,Enter 存、Esc 取消。 */
+function ProjectName({
+  project,
+  onRename,
+}: {
+  project: Project | null;
+  onRename: (name: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  if (!project) return <span className="topbar-name" />;
+  if (draft === null) {
+    return (
+      <button
+        className="topbar-name topbar-name-btn"
+        onClick={() => setDraft(project.name)}
+        title="點一下改名"
+      >
+        {project.name}
+      </button>
+    );
+  }
+  const commit = () => {
+    const name = draft.trim();
+    if (name && name !== project.name) onRename(name);
+    setDraft(null);
+  };
+  return (
+    <input
+      className="topbar-name topbar-name-input"
+      value={draft}
+      autoFocus
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        e.stopPropagation(); // 編輯器有一堆單鍵快速鍵,別讓打字觸發到
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") setDraft(null);
+      }}
+    />
+  );
+}
+
 function EditorTopbar({
   project,
   saveState,
   projectId,
   exportMenuRef,
   onBurn,
+  onRename,
 }: {
   project: Project | null;
   saveState: SaveState;
   projectId: string;
   exportMenuRef?: React.RefObject<HTMLDetailsElement>;
   onBurn?: () => void;
+  onRename?: (name: string) => void;
 }) {
   const done = project?.status === "done";
   return (
@@ -1446,7 +1660,11 @@ function EditorTopbar({
       <a className="brand-link" href="#/" title="回專案列表">
         <Brand />
       </a>
-      <span className="topbar-name">{project?.name ?? ""}</span>
+      {onRename ? (
+        <ProjectName project={project} onRename={onRename} />
+      ) : (
+        <span className="topbar-name">{project?.name ?? ""}</span>
+      )}
       <span className="topbar-right">
         {done && (
           <span className={"save-state save-" + saveState}>{SAVE_LABEL[saveState]}</span>

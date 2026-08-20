@@ -96,6 +96,29 @@ def find_claude() -> list[str] | None:
     return [path]
 
 
+def structured(data: dict, what: str) -> dict:
+    """從 claude CLI 的 JSON 回應裡挖出 structured_output。
+
+    模型有可能不照 schema 回,而是回一段普通文字(最常見的是它拒絕做這件事,
+    例如判定內容是受版權保護的歌詞)。這時候直接 json.loads 只會得到
+    「Expecting value: line 1 column 1」,使用者根本看不出發生什麼事——
+    所以把模型講的話原封不動當成錯誤訊息丟出去。
+    """
+    out = data.get("structured_output")
+    if isinstance(out, dict):
+        return out
+    text = str(data.get("result", "")).strip()
+    if text.startswith("```"):
+        text = text.strip("`").removeprefix("json").strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        raise RuntimeError(f"Claude 沒有回傳{what}結果,它說:{text[:400] or '(空白回應)'}") from None
+    if not isinstance(parsed, dict):
+        raise RuntimeError(f"Claude 的{what}結果格式不對:{text[:200]}")
+    return parsed
+
+
 def _public_state(job: dict | None) -> dict:
     if job is None:
         return {"status": "idle"}
@@ -235,14 +258,7 @@ def _run_batch(cmd: list[str], segments: list[dict], indices: list[int]) -> list
     data = json.loads(proc.stdout)
     if data.get("is_error") or data.get("subtype") != "success":
         raise RuntimeError(f"claude 回傳錯誤:{str(data.get('result'))[:300]}")
-    out = data.get("structured_output")
-    if not isinstance(out, dict):
-        # 少數情況沒有 structured_output,退而求其次從文字結果解析
-        text = str(data.get("result", "")).strip()
-        if text.startswith("```"):
-            text = text.strip("`").removeprefix("json").strip()
-        out = json.loads(text)
-    changes = out.get("changes") or []
+    changes = structured(data, "校正").get("changes") or []
 
     valid = set(indices)
     suggestions = []

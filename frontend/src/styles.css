@@ -325,7 +325,7 @@ button {
   position: relative;
   margin: -36px calc(-1 * clamp(20px, 6vw, 72px)) 32px;
   padding: clamp(36px, 6vw, 76px) clamp(20px, 6vw, 72px);
-  min-height: clamp(240px, 28vw, 380px);
+  min-height: clamp(300px, 34vw, 460px);
   display: flex;
   align-items: center;
   overflow: hidden;
@@ -366,10 +366,10 @@ button {
 
 .hero-title {
   margin: 0;
-  font-size: clamp(30px, 4.6vw, 54px);
+  font-size: clamp(38px, 6.2vw, 76px);
   font-weight: 800;
-  line-height: 1.16;
-  letter-spacing: -0.01em;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.4);
 }
 
@@ -1843,6 +1843,245 @@ a.btn {
   font-size: 17px;
   font-weight: 650;
   margin: 0;
+}
+
+/* ---- 辨識進度卡 ---- */
+
+.progress-card {
+  width: min(560px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 28px 30px 30px;
+  text-align: left;
+  box-shadow: 0 18px 40px -32px rgba(23, 24, 26, 0.5);
+}
+
+.progress-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.progress-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  color: var(--green-dark);
+}
+
+.progress-tag.failed {
+  color: var(--danger);
+}
+
+.progress-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.progress-elapsed {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.progress-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.progress-sub {
+  margin: 8px 0 22px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.stage-list {
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0;
+}
+
+.stage {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-radius: 11px;
+  font-size: 14px;
+  color: var(--muted);
+  transition: background 0.4s var(--ease-out), color 0.3s;
+}
+
+/* 圓圈=還沒做、綠勾=做完、實心綠點=正在做 */
+.stage-mark {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+}
+
+.stage-label {
+  font-weight: 600;
+}
+
+.stage-note {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-pct {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--green-dark);
+}
+
+.stage-done {
+  color: var(--text);
+}
+
+.stage-done .stage-mark {
+  border-color: var(--green);
+  background: var(--green);
+  /* 打勾:兩條邊 + 旋轉,不用額外的 svg */
+  box-shadow: inset 0 0 0 2px var(--green);
+  position: relative;
+}
+
+.stage-done .stage-mark::after {
+  content: "";
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--green-ink);
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(42deg);
+}
+
+.stage-now {
+  background: var(--green-softer);
+  color: var(--green-ink);
+}
+
+.stage-now .stage-mark {
+  border-color: var(--green);
+  background: var(--green);
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+.stage-now .stage-label::after {
+  content: "…";
+}
+
+.stage-failed .stage-mark {
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
+.stage-failed {
+  color: var(--danger);
+}
+
+/* ---- 剪輯範圍 ---- */
+
+.trim-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.trim-range {
+  border: 1px solid var(--line);
+  background: var(--green-softer);
+  color: var(--green-dark);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.trim-hint {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+/* 剪輯範圍外的波形壓灰,一眼看得出成品只會出這一段 */
+.wave-outside {
+  position: absolute;
+  top: 22px;
+  bottom: 0;
+  background: rgba(244, 244, 241, 0.72);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.wave-trim-edge {
+  position: absolute;
+  top: 22px;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--green-dark);
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* ---- 專案改名 ---- */
+
+.topbar-name-btn {
+  border: 1px solid transparent;
+  background: none;
+  font: inherit;
+  color: inherit;
+  padding: 3px 8px;
+  margin-left: -8px;
+  border-radius: 8px;
+  cursor: text;
+  max-width: 46ch;
+  text-align: left;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.topbar-name-btn:hover {
+  border-color: var(--line-strong);
+  background: var(--panel);
+}
+
+.topbar-name-input {
+  font: inherit;
+  font-weight: 650;
+  padding: 3px 8px;
+  margin-left: -8px;
+  width: min(46ch, 40vw);
+  border: 1px solid var(--green);
+  border-radius: 8px;
+  background: var(--panel);
+  color: inherit;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--green-soft);
 }
 
 .hint {

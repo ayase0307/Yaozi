@@ -151,7 +151,60 @@ def _transcribe(meta: dict, audio, duration: float) -> list[dict]:
         if len(segments) % 5 == 0:
             storage.save_project(meta)
     meta["language"] = info.language
-    return segments
+    return _split_long(segments, opts["split_chars"])
+
+
+# 斷句優先挑這些字後面;沒有標點時退而求其次找最長的停頓
+_BREAK_AFTER = "，。、；：？！,.;:?!」』）】"
+
+
+def _split_long(segments: list[dict], limit: int) -> list[dict]:
+    """把過長的句子照單字時間戳切開。
+
+    Whisper 吐出來的一「段」常常是一整口氣講完的話,三、四十個字都有可能,
+    這種字幕根本讀不完。單純照字數硬切會切在詞中間,所以先找標點,
+    沒標點就找字與字之間最久的停頓(通常就是換氣的地方)。
+    """
+    if limit <= 0:
+        return segments
+    out: list[dict] = []
+    queue = list(segments)
+    while queue:
+        seg = queue.pop(0)
+        words = seg.get("words") or []
+        # 沒有單字時間戳就切不準,寧可留著長句也不要時間軸錯位
+        if len(seg["text"]) <= limit or len(words) < 2:
+            out.append(seg)
+            continue
+        best, best_score = None, -1.0
+        for i in range(1, len(words)):
+            left = "".join(w["word"] for w in words[:i])
+            # 兩邊都不能太短,否則會切出一兩個字的碎片
+            if not (limit * 0.3 <= len(left.strip()) <= limit):
+                continue
+            gap = words[i]["start"] - words[i - 1]["end"]
+            score = gap + (1.0 if left.rstrip()[-1:] in _BREAK_AFTER else 0.0)
+            if score > best_score:
+                best, best_score = i, score
+        if best is None:
+            out.append(seg)
+            continue
+        cut = round((words[best - 1]["end"] + words[best]["start"]) / 2, 3)
+        head = "".join(w["word"] for w in words[:best]).strip()
+        tail = "".join(w["word"] for w in words[best:]).strip()
+        if not head or not tail:
+            out.append(seg)
+            continue
+        out.append({**seg, "end": cut, "text": head, "words": words[:best]})
+        # 尾巴放回佇列,還太長就繼續切
+        queue.insert(0, {
+            "id": uuid.uuid4().hex[:8],
+            "start": cut,
+            "end": seg["end"],
+            "text": tail,
+            "words": words[best:],
+        })
+    return out
 
 
 def _to_traditional(segments: list[dict]) -> list[dict]:

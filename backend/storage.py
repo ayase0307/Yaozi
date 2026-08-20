@@ -59,9 +59,49 @@ def create_project(display_name: str, media_suffix: str) -> dict:
         "has_video": None,
         "model": config.MODEL_NAME,
         "device": None,
+        # 剪輯範圍 {"start": 秒, "end": 秒};None = 整支影片
+        "trim": None,
     }
     save_project(meta)
     return meta
+
+
+def clean_trim(raw, duration: float | None) -> dict | None:
+    """把外來的剪輯範圍夾成合法區間。太短(<0.5 秒)或涵蓋全片就當作沒設。"""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        a = max(float(raw["start"]), 0.0)
+        b = float(raw["end"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if duration:
+        a, b = min(a, duration), min(b, duration)
+    if b - a < 0.5:
+        return None
+    if a <= 0 and duration and b >= duration - 0.01:
+        return None
+    return {"start": round(a, 3), "end": round(b, 3)}
+
+
+def apply_trim(segments: list[dict], trim: dict | None) -> list[dict]:
+    """把字幕裁到剪輯範圍內,並把時間軸平移到以剪輯起點為 0。
+
+    燒錄與匯出字幕檔都要走這裡,不然剪過的成品跟 SRT 會對不起來。
+    """
+    if not trim:
+        return segments
+    a, b = trim["start"], trim["end"]
+    out = []
+    for s in segments:
+        if s["end"] <= a or s["start"] >= b:
+            continue
+        out.append({
+            **s,
+            "start": round(max(s["start"], a) - a, 3),
+            "end": round(min(s["end"], b) - a, 3),
+        })
+    return out
 
 
 def load_project(pid: str) -> dict | None:

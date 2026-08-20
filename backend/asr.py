@@ -19,6 +19,7 @@ DEFAULTS = {
     "prompt": "",  # 提示詞:人名、專有名詞、歌詞片段,幫模型聽對難字
     "vad": True,  # 過濾無語音片段(關掉的話整段音樂/雜訊也會拿去辨識)
     "vad_threshold": 0.5,  # 越低抓到越多語音(小聲、唱歌),越高越不會把雜訊當人聲
+    "split_chars": 24,  # 一句超過幾個字就自動切開(照單字時間戳);0 = 不切
 }
 
 # 只做長度與格式的把關,語言代碼不寫死清單(Whisper 支援 99 種,前端只列常用的)
@@ -34,6 +35,10 @@ def clean(raw: dict) -> dict:
     out["vad"] = bool(raw.get("vad", DEFAULTS["vad"]))
     try:
         out["vad_threshold"] = round(min(max(float(raw["vad_threshold"]), 0.1), 0.9), 2)
+    except (KeyError, TypeError, ValueError):
+        pass
+    try:
+        out["split_chars"] = int(min(max(float(raw["split_chars"]), 0), 80))
     except (KeyError, TypeError, ValueError):
         pass
     return out

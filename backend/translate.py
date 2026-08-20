@@ -160,12 +160,7 @@ def _run_batch(cmd: list[str], segments: list[dict], indices: list[int], target:
     data = json.loads(proc.stdout)
     if data.get("is_error") or data.get("subtype") != "success":
         raise RuntimeError(f"claude 回傳錯誤:{str(data.get('result'))[:300]}")
-    out = data.get("structured_output")
-    if not isinstance(out, dict):
-        text = str(data.get("result", "")).strip()
-        if text.startswith("```"):
-            text = text.strip("`").removeprefix("json").strip()
-        out = json.loads(text)
+    out = llm.structured(data, "翻譯")
 
     valid = set(indices)
     return {

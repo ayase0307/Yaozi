@@ -214,6 +214,28 @@ function AsrControls({
         數字調低會抓到更多小聲、唱歌的段落(也更容易把雜訊當人聲);調高則相反。
         整支影片只辨識出零星幾句時,先把這個往下調。
       </p>
+
+      <label className="style-row">
+        <span className="style-label">單句上限</span>
+        <input
+          type="range"
+          className="style-range"
+          min={0}
+          max={60}
+          step={1}
+          value={value.split_chars}
+          onChange={(e) => update({ split_chars: Number(e.target.value) })}
+        />
+        <span className="style-value mono">
+          {value.split_chars || "不切"}
+          <span className="style-unit">{value.split_chars ? "字" : ""}</span>
+        </span>
+      </label>
+      <p className="style-hint">
+        Whisper 常常把一口氣講完的話當成一句,三、四十個字都有可能,那種字幕讀不完。
+        超過這個字數就照單字時間戳切開,優先斷在標點、其次斷在換氣的停頓。
+        跟「每行字數」不一樣:那個只是把同一句折行,這個是真的切成兩句、各有自己的時間軸。
+      </p>
     </div>
   );
 }

@@ -83,6 +83,10 @@ def start(pid: str) -> dict:
             raise RuntimeError("匯出已在進行中")
 
     width, height = _probe_size(media)
+    trim = meta.get("trim")
+    segments = storage.apply_trim(segments, trim)
+    if not segments:
+        raise RuntimeError("剪輯範圍內沒有字幕")
     (d / "burn.ass").write_text(
         exporter.to_ass(segments, width, height, style.load()), encoding="utf-8"
     )
@@ -91,13 +95,15 @@ def start(pid: str) -> dict:
     with _lock:
         _jobs[pid] = job
     duration = float(meta.get("duration") or 0)
+    if trim:
+        duration = trim["end"] - trim["start"]
     threading.Thread(
-        target=_run, args=(pid, d, meta["media_file"], duration, job), daemon=True
+        target=_run, args=(pid, d, meta["media_file"], duration, trim, job), daemon=True
     ).start()
     return get_state(pid)
 
 
-def _run(pid: str, d, media_name: str, duration: float, job: dict) -> None:
+def _run(pid: str, d, media_name: str, duration: float, trim: dict | None, job: dict) -> None:
     err_file = d / "burn_err.txt"
     try:
         last_err = ""
@@ -105,8 +111,12 @@ def _run(pid: str, d, media_name: str, duration: float, job: dict) -> None:
             if job["cancel"]:
                 job["status"] = "canceled"
                 return
-            args = [config.FFMPEG, "-y", "-v", "error", "-nostats", "-progress", "pipe:1",
-                    "-i", media_name, "-vf", "ass=burn.ass", "-c:v", vcodec]
+            args = [config.FFMPEG, "-y", "-v", "error", "-nostats", "-progress", "pipe:1"]
+            # -ss 放在 -i 前面是「輸入端尋址」,快而且輸出時間軸會歸零,
+            # 剛好對上已經平移過的 burn.ass
+            if trim:
+                args += ["-ss", f"{trim['start']:.3f}", "-t", f"{trim['end'] - trim['start']:.3f}"]
+            args += ["-i", media_name, "-vf", "ass=burn.ass", "-c:v", vcodec]
             if vcodec == "h264_nvenc":
                 args += ["-preset", "p5", "-cq", "19"]
             else:

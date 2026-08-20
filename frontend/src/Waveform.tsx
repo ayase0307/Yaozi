@@ -6,11 +6,13 @@ import {
   useState,
 } from "react";
 import { formatTime, formatTimeMs } from "./segments";
-import type { Segment } from "./types";
+import type { Project, Segment } from "./types";
 
 const RULER_H = 22;
 const STRIP_H = 150;
 const MIN_LEN = 0.05;
+// 時間軸左右各留一點空白,不然第一句的左緣與最後一句的右緣會貼在容器邊上抓不到
+const PAD = 28;
 
 interface WaveformProps {
   peaks: { rate: number; peaks: number[] };
@@ -30,6 +32,8 @@ interface WaveformProps {
   onSelect: (idx: number) => void;
   onCommitTimes: (id: string, start: number, end: number) => void;
   onCreate: (start: number, end: number) => void;
+  /** 剪輯範圍,範圍外的部分畫成灰的。null = 整支影片。 */
+  trim: Project["trim"];
 }
 
 interface DragState {
@@ -70,6 +74,7 @@ export default function Waveform({
   onSelect,
   onCommitTimes,
   onCreate,
+  trim,
 }: WaveformProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -109,7 +114,7 @@ export default function Waveform({
     if (!isPlaying) return;
     const el = scrollRef.current;
     if (!el) return;
-    const x = currentTime * pps;
+    const x = currentTime * pps + PAD;
     if (x < el.scrollLeft + 40 || x > el.scrollLeft + viewW - 80) {
       el.scrollLeft = Math.max(0, x - viewW * 0.3);
     }
@@ -123,10 +128,10 @@ export default function Waveform({
         setPps(next);
         return;
       }
-      const centerT = (el.scrollLeft + viewW / 2) / pps;
+      const centerT = (el.scrollLeft + viewW / 2 - PAD) / pps;
       setPps(next);
       requestAnimationFrame(() => {
-        el.scrollLeft = Math.max(0, centerT * next - viewW / 2);
+        el.scrollLeft = Math.max(0, centerT * next + PAD - viewW / 2);
       });
     },
     [pps, viewW]
@@ -150,6 +155,9 @@ export default function Waveform({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
+    // 畫布是照容器座標畫的,扣掉留白就等於「時間 0 在哪個 x」
+    const off = scrollLeft - PAD;
+
     // 尺標
     ctx.fillStyle = "#898f97";
     ctx.strokeStyle = "#e4e4de";
@@ -160,9 +168,9 @@ export default function Waveform({
     ctx.lineTo(w, RULER_H - 0.5);
     ctx.stroke();
     const step = rulerStep(pps);
-    const t0 = Math.floor(scrollLeft / pps / step) * step;
-    for (let t = t0; t * pps < scrollLeft + w; t += step) {
-      const x = t * pps - scrollLeft;
+    const t0 = Math.max(0, Math.floor(off / pps / step) * step);
+    for (let t = t0; t * pps < off + w; t += step) {
+      const x = t * pps - off;
       ctx.fillRect(x, RULER_H - 6, 1, 6);
       ctx.fillText(formatTime(t).replace(/\.\d$/, ""), x + 4, 4);
     }
@@ -171,12 +179,13 @@ export default function Waveform({
     const waveH = h - RULER_H - 8;
     const midY = RULER_H + 4 + waveH / 2;
     const { rate, peaks: data } = peaks;
-    const playedX = currentTime * pps - scrollLeft;
+    const playedX = currentTime * pps - off;
     for (let x = 0; x < w; x += 2) {
-      const t = (scrollLeft + x) / pps;
+      const t = (off + x) / pps;
+      if (t < 0) continue;
       if (t > duration) break;
       const i0 = Math.floor(t * rate);
-      const i1 = Math.max(i0 + 1, Math.floor(((scrollLeft + x + 2) / pps) * rate));
+      const i1 = Math.max(i0 + 1, Math.floor(((off + x + 2) / pps) * rate));
       let v = 0;
       for (let i = i0; i < i1 && i < data.length; i++) if (data[i] > v) v = data[i];
       const bh = Math.max((v / maxPeak) * waveH * 0.92, 1.5);
@@ -187,7 +196,7 @@ export default function Waveform({
     // 切點(畫面剪接點):藍點+淡藍細線
     ctx.fillStyle = "#2563eb";
     for (const t of cuts) {
-      const x = t * pps - scrollLeft;
+      const x = t * pps - off;
       if (x < -4 || x > w + 4) continue;
       ctx.globalAlpha = 0.18;
       ctx.fillRect(x - 0.5, RULER_H, 1, h - RULER_H);
@@ -317,7 +326,7 @@ export default function Waveform({
       const inner = innerRef.current;
       if (!inner) return 0;
       const rect = inner.getBoundingClientRect();
-      return Math.min(Math.max((clientX - rect.left) / pps, 0), duration);
+      return Math.min(Math.max((clientX - rect.left - PAD) / pps, 0), duration);
     },
     [pps, duration]
   );
@@ -378,7 +387,7 @@ export default function Waveform({
     [timeAt, onAddMark]
   );
 
-  const innerW = Math.max(duration * pps, viewW);
+  const innerW = Math.max(duration * pps + PAD * 2, viewW);
   const sel =
     selectedIdx >= 0 && selectedIdx < segments.length
       ? segments[selectedIdx]
@@ -403,11 +412,22 @@ export default function Waveform({
           onDoubleClick={onInnerDoubleClick}
         >
           <canvas className="wave-canvas" ref={canvasRef} />
+          {trim && (
+            <>
+              <div className="wave-outside" style={{ left: 0, width: trim.start * pps + PAD }} />
+              <div
+                className="wave-outside"
+                style={{ left: trim.end * pps + PAD, right: 0 }}
+              />
+              <div className="wave-trim-edge" style={{ left: trim.start * pps + PAD }} />
+              <div className="wave-trim-edge" style={{ left: trim.end * pps + PAD }} />
+            </>
+          )}
           {marks.map((t) => (
             <div
               key={t}
               className="wave-mark"
-              style={{ left: t * pps }}
+              style={{ left: t * pps + PAD }}
               title="雙擊移除這個 Mark 點"
               onPointerDown={(e) => e.stopPropagation()}
               onDoubleClick={(e) => {
@@ -430,7 +450,7 @@ export default function Waveform({
                 key={seg.id}
                 className={cls}
                 style={{
-                  left: times.start * pps,
+                  left: times.start * pps + PAD,
                   width: Math.max((times.end - times.start) * pps, 6),
                 }}
                 onPointerDown={(e) => onBlockPointerDown(e, seg, idx, "move")}
@@ -457,12 +477,12 @@ export default function Waveform({
             <div
               className="wave-ghost"
               style={{
-                left: Math.min(createGhost.a, createGhost.b) * pps,
+                left: Math.min(createGhost.a, createGhost.b) * pps + PAD,
                 width: Math.abs(createGhost.b - createGhost.a) * pps,
               }}
             />
           )}
-          <div className="wave-playhead" style={{ left: currentTime * pps }} />
+          <div className="wave-playhead" style={{ left: currentTime * pps + PAD }} />
         </div>
       </div>
       <div className="wave-footer">

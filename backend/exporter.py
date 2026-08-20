@@ -106,21 +106,46 @@ _ALIGN = {
 }
 
 
-def to_ass(segments: list[dict], width: int, height: int, style: dict | None = None) -> str:
-    """燒錄用 ASS 字幕。尺寸全部是「佔畫面高度的百分比」乘回實際畫面,換解析度自動縮放。"""
-    st = {**style_module.DEFAULTS, **(style or {})}
+# ponytail: libass 的實際行高是字型的 ascent+descent+linegap,ASS 檔裡讀不到。
+# 1.2 是常見中文黑體的概值,用來算譯文那一塊佔多高、原文要往上讓多少。
+# 譯文跟原文間距明顯不對時就調這個。
+LINE_H = 1.2
+
+
+def _style_line(name: str, st: dict, width: int, height: int, margin_v: int) -> str:
     fs = max(round(height * st["size"] / 100), 16)
     # none 模式仍走 BorderStyle 1,只是把邊框粗細歸零
     border_style = 3 if st["border"] == "box" else 1
     outline = 0 if st["border"] == "none" else max(round(height * st["outline"] / 100), 0)
     shadow = max(round(height * st["shadow"] / 100), 0)
     spacing = round(height * st["spacing"] / 100, 1)
-    margin_v = max(round(height * st["bottom"] / 100), 0)
     margin_lr = max(round(width * st["side"] / 100), 0)
     primary = _ass_color(st["color"])
     # BorderStyle=3 時 libass 是拿 OutlineColour 去填整塊底框
     outline_colour = _ass_color(st["outline_color"], st["outline_opacity"])
     back_colour = _ass_color(st["shadow_color"], st["shadow_opacity"])
+    return (
+        f"Style: {name},{st['font']},{fs},{primary},{primary},"
+        f"{outline_colour},{back_colour},{-1 if st['bold'] else 0},"
+        f"{-1 if st['italic'] else 0},0,0,100,100,{spacing},0,"
+        f"{border_style},{outline},{shadow},"
+        f"{_ALIGN[(st['align'], st['vertical'])]},{margin_lr},{margin_lr},{margin_v},1"
+    )
+
+
+def to_ass(segments: list[dict], width: int, height: int, style: dict | None = None) -> str:
+    """燒錄用 ASS 字幕。尺寸全部是「佔畫面高度的百分比」乘回實際畫面,換解析度自動縮放。
+
+    有譯文時原文與譯文各自成一個 Dialogue、各自套一組 Style,兩者的距離靠
+    MarginV 差值做出來——同一個 Dialogue 裡的兩行沒辦法分開設字級與間距。
+    兩個事件放不同 Layer,libass 才不會判定它們重疊而自己把上面那個往上推。
+    """
+    st = {**style_module.DEFAULTS, **(style or {})}
+    ts = style_module.trans_of(st)
+    margin_v = max(round(height * st["bottom"] / 100), 0)
+    gap = max(round(height * st["trans_gap"] / 100), 0)
+    trans_fs = max(round(height * ts["size"] / 100), 16)
+    orig_fs = max(round(height * st["size"] / 100), 16)
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -133,11 +158,8 @@ def to_ass(segments: list[dict], width: int, height: int, style: dict | None = N
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Default,{st['font']},{fs},{primary},{primary},"
-        f"{outline_colour},{back_colour},{-1 if st['bold'] else 0},"
-        f"{-1 if st['italic'] else 0},0,0,100,100,{spacing},0,"
-        f"{border_style},{outline},{shadow},"
-        f"{_ALIGN[(st['align'], st['vertical'])]},{margin_lr},{margin_lr},{margin_v},1\n\n"
+        f"{_style_line('Default', st, width, height, margin_v)}\n"
+        f"{_style_line('Trans', ts, width, height, margin_v)}\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
@@ -145,14 +167,23 @@ def to_ass(segments: list[dict], width: int, height: int, style: dict | None = N
     for s in segments:
         if not s["text"].strip():
             continue
+        t0, t1 = _ass_time(s["start"]), _ass_time(s["end"])
         lines = wrap_text(s["text"], st["max_chars"])
-        if s.get("trans"):
-            lines += wrap_text(s["trans"], st["max_chars"])
-        text = "\n".join(lines)
+        trans_lines = wrap_text(s["trans"], st["max_chars"]) if s.get("trans") else []
+        # MarginV 是「離對齊那一側的距離」,貼上時讓譯文往下、貼下時讓原文往上
+        offset = round(len(trans_lines) * trans_fs * LINE_H) + gap if trans_lines else 0
+        if st["vertical"] == "top":
+            orig_mv, trans_mv = margin_v, margin_v + round(len(lines) * orig_fs * LINE_H) + gap
+        else:
+            orig_mv, trans_mv = margin_v + offset, margin_v
         events.append(
-            f"Dialogue: 0,{_ass_time(s['start'])},{_ass_time(s['end'])},Default,,0,0,0,,"
-            f"{_ass_escape(text)}"
+            f"Dialogue: 1,{t0},{t1},Default,,0,0,{orig_mv},,{_ass_escape(chr(10).join(lines))}"
         )
+        if trans_lines:
+            events.append(
+                f"Dialogue: 0,{t0},{t1},Trans,,0,0,{trans_mv},,"
+                f"{_ass_escape(chr(10).join(trans_lines))}"
+            )
     return header + "\n".join(events) + "\n"
 
 

@@ -38,6 +38,14 @@ export const api = {
 
   getProject: (id: string) => fetch(`/api/projects/${id}`).then((r) => json<Project>(r)),
 
+  /** 改專案名或剪輯範圍;只送要改的欄位。 */
+  patchProject: (id: string, patch: { name?: string; trim?: Project["trim"] }) =>
+    fetch(`/api/projects/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then((r) => json<Project>(r)),
+
   deleteProject: (id: string) =>
     fetch(`/api/projects/${id}`, { method: "DELETE" }).then((r) => json<{ ok: boolean }>(r)),
 
