@@ -1,4 +1,12 @@
-import type { BurnJob, DictEntry, FixJob, Project, Segment, SubtitleStyle } from "./types";
+import type {
+  BurnJob,
+  DictEntry,
+  FixJob,
+  FontGroup,
+  Project,
+  Segment,
+  SubtitleStyle,
+} from "./types";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -64,7 +72,7 @@ export const api = {
       json<{ entries: DictEntry[] }>(r)
     ),
 
-  getFonts: () => fetch("/api/fonts").then((r) => json<{ families: string[] }>(r)),
+  getFonts: () => fetch("/api/fonts").then((r) => json<{ groups: FontGroup[] }>(r)),
 
   getStyle: () => fetch("/api/style").then((r) => json<SubtitleStyle>(r)),
 

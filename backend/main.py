@@ -236,7 +236,7 @@ def delete_dict_entry(entry_id: str):
 
 @app.get("/api/fonts")
 def list_fonts():
-    return {"families": fonts.list_families()}
+    return {"groups": fonts.grouped()}
 
 
 @app.get("/api/style")

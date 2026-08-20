@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, uploadMedia } from "./api";
 import Brand from "./Brand";
-import UiFontPicker from "./UiFont";
 import { RUNNING_STATUSES, statusLabel, type Project } from "./types";
 import { formatTime } from "./segments";
 
@@ -76,7 +75,9 @@ export default function Home() {
         <Brand />
         <span className="topbar-note">本機字幕工具,檔案不離開你的電腦</span>
         <span className="topbar-right">
-          <UiFontPicker />
+          <a className="btn small" href="#/settings">
+            設定
+          </a>
         </span>
       </header>
 
@@ -209,6 +210,21 @@ export default function Home() {
             })}
           </section>
         )}
+
+        <section className="mascot">
+          <div className="mascot-copy">
+            <p className="mascot-kicker">全程離線</p>
+            <h2 className="mascot-title">
+              你的影片
+              <br />
+              不會被餵去訓練誰
+            </h2>
+            <p className="mascot-sub">
+              辨識、校對、燒錄都在這台電腦跑完。沒有上傳、沒有帳號、沒有月費。
+            </p>
+          </div>
+          <Illustration name="mascot" className="mascot-art" />
+        </section>
       </main>
     </div>
   );

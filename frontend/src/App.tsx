@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
 import Editor from "./Editor";
 import Home from "./Home";
+import Settings from "./Settings";
 import { applyUiFont, loadUiFont } from "./UiFont";
+import { applyUiSize, loadUiSize } from "./UiSize";
 
-// 進站就套上次選的介面字型,兩個頁面都算數
+// 進站就套上次選的介面字型與字級,每個頁面都算數
 applyUiFont(loadUiFont());
+applyUiSize(loadUiSize());
 
-function parseHash(): { page: "home" } | { page: "editor"; id: string } {
+function parseHash(): { page: "home" | "settings" } | { page: "editor"; id: string } {
   const m = location.hash.match(/^#\/p\/([a-z0-9]+)/);
-  return m ? { page: "editor", id: m[1] } : { page: "home" };
+  if (m) return { page: "editor", id: m[1] };
+  return { page: location.hash.startsWith("#/settings") ? "settings" : "home" };
 }
 
 export default function App() {
@@ -20,5 +24,6 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  return route.page === "editor" ? <Editor key={route.id} projectId={route.id} /> : <Home />;
+  if (route.page === "editor") return <Editor key={route.id} projectId={route.id} />;
+  return route.page === "settings" ? <Settings /> : <Home />;
 }

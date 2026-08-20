@@ -22,6 +22,8 @@
     "Microsoft JhengHei", system-ui, sans-serif;
   --sans: var(--sans-fallback);
   --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  /* 設定頁可調(UiSize.tsx),點陣介面字型需要放大到 11 的倍數才銳利 */
+  --ui-size: 15px;
 }
 
 * {
@@ -39,7 +41,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: var(--ui-size);
   line-height: 1.6;
 }
 
@@ -368,22 +370,280 @@ button {
   opacity: 0.9;
 }
 
-/* ---- 介面字型選單 ---- */
+/* ---- 首頁下方衝擊區 ---- */
 
-.uifont {
+.mascot {
+  margin: 56px 0 8px;
+  padding: clamp(24px, 4vw, 44px);
+  border-radius: 24px;
+  background: linear-gradient(120deg, var(--green-ink), #123d07 60%, #1a5c0a);
+  color: #f2fbee;
+  display: flex;
+  align-items: center;
+  gap: clamp(16px, 3vw, 40px);
+  overflow: hidden;
+}
+
+.mascot-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.mascot-kicker {
+  margin: 0;
+  color: var(--green);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.mascot-title {
+  margin: 8px 0 0;
+  font-size: clamp(24px, 3.4vw, 40px);
+  font-weight: 800;
+  line-height: 1.22;
+}
+
+.mascot-sub {
+  margin: 14px 0 0;
+  max-width: 44ch;
+  color: #bcd6b3;
+  font-size: 14px;
+}
+
+/* 刻意讓怪獸超出區塊上下緣,才有衝出畫面的力道 */
+.mascot-art {
+  width: clamp(160px, 28vw, 330px);
+  height: auto;
+  flex-shrink: 0;
+  margin: clamp(-40px, -4vw, -12px) 0;
+  filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.35));
+}
+
+/* ---- 字型選單 ---- */
+
+.fontpick {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.fontpick-btn {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
 }
 
-.uifont-label {
+.fontpick-btn:hover {
+  border-color: var(--green-dark);
+}
+
+.fontpick-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fontpick-caret {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.fontpick-pop {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  min-width: 240px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+}
+
+.fontpick-search {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  outline: none;
+}
+
+.fontpick-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.fontpick-group {
+  position: sticky;
+  top: 0;
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--green-softer);
+  color: var(--green-ink);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.fontpick-count {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.fontpick-item {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: 0;
+  background: none;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fontpick-item:hover {
+  background: var(--green-soft);
+}
+
+.fontpick-item.on {
+  background: var(--green-soft);
+  font-weight: 700;
+}
+
+.fontpick-empty {
+  padding: 16px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ---- 設定頁 ---- */
+
+.settings {
+  flex: 1;
+  overflow-y: auto;
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 20px 22px 22px;
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.settings-sub {
+  margin: 6px 0 0;
   color: var(--muted);
   font-size: 12.5px;
-  white-space: nowrap;
 }
 
-.uifont .select {
-  max-width: 190px;
+.settings-checks {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+}
+
+.settings-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  flex-shrink: 0;
+}
+
+.settings-dot.on {
+  background: var(--green);
+}
+
+.settings-dot.off {
+  background: var(--danger);
+}
+
+.settings-check-name {
+  font-weight: 650;
+  min-width: 140px;
+}
+
+.settings-check-note {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* ---- 字幕模擬區 ---- */
+
+.style-sim {
+  margin-top: 4px;
+}
+
+.style-sim-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.style-sim-head .style-label {
+  flex: 1;
+}
+
+.style-sim-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(160deg, #3b4a52, #1b2226 55%, #10161a);
+}
+
+.style-sim-frame.light {
+  background: linear-gradient(160deg, #f0ece2, #cfd6cb 55%, #b9c4b6);
+}
+
+.style-sim-text {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  text-align: center;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .dropzone {
@@ -1171,6 +1431,16 @@ a.btn {
   gap: 12px;
 }
 
+/* 設定頁的卡片自己有內距,不要再吃面板那一份 */
+.settings-card .style-body {
+  padding: 14px 0 0;
+  overflow: visible;
+}
+
+.settings-card .style-label {
+  width: 64px;
+}
+
 .style-row {
   display: flex;
   align-items: center;
@@ -1182,24 +1452,6 @@ a.btn {
   flex-shrink: 0;
   color: var(--muted);
   font-size: 13px;
-}
-
-.style-input {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 6px 10px;
-  font-family: inherit;
-  font-size: 13.5px;
-  background: var(--panel);
-  color: var(--text);
-}
-
-.style-input:focus {
-  outline: none;
-  border-color: var(--green);
-  box-shadow: 0 0 0 3px var(--green-soft);
 }
 
 .style-range {
@@ -1244,17 +1496,6 @@ a.btn {
 
 .style-check input {
   accent-color: var(--green);
-}
-
-/* 深色底才看得出白字加黑邊的實際效果 */
-.style-preview {
-  background: #23262b;
-  border-radius: 10px;
-  padding: 20px 14px;
-  text-align: center;
-  font-size: 24px;
-  line-height: 1.4;
-  word-break: break-word;
 }
 
 .style-hint {

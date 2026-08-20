@@ -1327,6 +1327,9 @@ function EditorTopbar({
         {done && (
           <span className={"save-state save-" + saveState}>{SAVE_LABEL[saveState]}</span>
         )}
+        <a className="btn small" href="#/settings">
+          設定
+        </a>
         {done && (
           <details className="export-menu" ref={exportMenuRef}>
             <summary className="btn primary">匯出</summary>

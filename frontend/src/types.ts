@@ -46,6 +46,12 @@ export interface SubtitleStyle {
   bold: boolean;
 }
 
+/** 依語系分好的字型清單,後端排好順序(中文在最前面)。 */
+export interface FontGroup {
+  label: string;
+  fonts: string[];
+}
+
 export interface DictEntry {
   id: string;
   wrong: string;
