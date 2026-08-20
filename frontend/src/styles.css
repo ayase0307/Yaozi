@@ -16,8 +16,11 @@
   --green-softer: #f2fbee;
   --green-ink: #0b2705;
   --danger: #e0403f;
-  --sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft JhengHei UI",
+  /* --sans 會被 UiFont.tsx 覆寫成「使用者選的字型, var(--sans-fallback)」,
+     所以字型堆疊只寫在 --sans-fallback 這一處 */
+  --sans-fallback: "Segoe UI Variable Text", "Segoe UI", "Microsoft JhengHei UI",
     "Microsoft JhengHei", system-ui, sans-serif;
+  --sans: var(--sans-fallback);
   --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
 }
 
@@ -309,6 +312,78 @@ button {
   padding: 12px 18px;
   margin-bottom: 20px;
   font-size: 14px;
+}
+
+/* ---- 首頁主視覺 ---- */
+
+.hero {
+  display: flex;
+  align-items: center;
+  gap: clamp(20px, 4vw, 56px);
+  margin-bottom: 28px;
+}
+
+.hero-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.hero-title {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 46px);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.hero-sub {
+  margin: 14px 0 0;
+  max-width: 46ch;
+  color: var(--muted);
+  font-size: 14.5px;
+}
+
+/* 插圖是裝飾,窄畫面直接讓路給文案 */
+.hero-art {
+  width: clamp(180px, 30vw, 340px);
+  height: auto;
+  flex-shrink: 0;
+}
+
+.empty-state {
+  margin-top: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.empty-state .empty-hint {
+  margin-top: 0;
+}
+
+.empty-art {
+  width: clamp(140px, 22vw, 220px);
+  height: auto;
+  opacity: 0.9;
+}
+
+/* ---- 介面字型選單 ---- */
+
+.uifont {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.uifont-label {
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.uifont .select {
+  max-width: 190px;
 }
 
 .dropzone {
@@ -618,20 +693,21 @@ button {
   box-shadow: 0 0 0 3px var(--green-soft);
 }
 
-/* 簽名元素:影片上即時顯示目前那句,長得就像真的字幕 */
+/* 簽名元素:影片上即時顯示目前那句。
+   外框大小由 JS 依影片實際高度換算,跟燒錄用的 ASS 樣式同一組百分比。 */
 .subtitle-overlay {
   z-index: 6;
   position: absolute;
+  pointer-events: none;
+}
+
+.subtitle-overlay-text {
+  position: absolute;
   left: 6%;
   right: 6%;
-  bottom: 14%;
   text-align: center;
-  color: #fff;
-  font-size: clamp(14px, 1.6vw, 21px);
-  font-weight: 700;
-  line-height: 1.45;
-  text-shadow: 0 0 4px #000, 0 2px 3px #000, 0 0 10px rgba(0, 0, 0, 0.85);
-  pointer-events: none;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 /* ---- 字幕列表 ---- */
@@ -1082,6 +1158,110 @@ a.btn {
 .dict-right {
   color: var(--green-dark);
   font-weight: 650;
+}
+
+/* ---- 字幕外觀面板 ---- */
+
+.style-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.style-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.style-label {
+  width: 52px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.style-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 13.5px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.style-input:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+
+.style-range {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--green);
+}
+
+.style-value {
+  width: 92px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.style-unit {
+  color: var(--muted);
+  font-size: 11px;
+  padding-left: 3px;
+}
+
+.style-color {
+  width: 34px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.style-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.style-check input {
+  accent-color: var(--green);
+}
+
+/* 深色底才看得出白字加黑邊的實際效果 */
+.style-preview {
+  background: #23262b;
+  border-radius: 10px;
+  padding: 20px 14px;
+  text-align: center;
+  font-size: 24px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.style-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 /* ---- AI 校正執行狀態卡 ---- */

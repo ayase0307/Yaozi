@@ -64,21 +64,17 @@ export function matchPresetByRatio(vw: number, vh: number): string {
   return best;
 }
 
-/** 疊在影片實際內容區上(自動扣掉上下/左右黑邊)。 */
-export default function SafeFrame({
-  videoRef,
-  frameKey,
-}: {
-  videoRef: React.RefObject<HTMLVideoElement>;
-  frameKey: string;
-}) {
-  const [rect, setRect] = useState<{
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-  } | null>(null);
-  const preset = SAFE_FRAMES.find((p) => p.key === frameKey);
+export interface VideoRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** 影片實際畫面在版面上的位置與大小(自動扣掉上下/左右黑邊)。
+ *  安全框與字幕預覽都疊在這塊區域上,兩者才會對得起來。 */
+export function useVideoRect(videoRef: React.RefObject<HTMLVideoElement>): VideoRect | null {
+  const [rect, setRect] = useState<VideoRect | null>(null);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -115,7 +111,21 @@ export default function SafeFrame({
       ro.disconnect();
       v.removeEventListener("loadedmetadata", update);
     };
-  }, [videoRef, frameKey]);
+  }, [videoRef]);
+
+  return rect;
+}
+
+/** 疊在影片實際內容區上的平台 UI 遮擋提示。 */
+export default function SafeFrame({
+  videoRef,
+  frameKey,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement>;
+  frameKey: string;
+}) {
+  const rect = useVideoRect(videoRef);
+  const preset = SAFE_FRAMES.find((p) => p.key === frameKey);
 
   if (!preset || !preset.ratio || !rect) return null;
   return (

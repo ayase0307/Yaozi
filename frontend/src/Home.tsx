@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, uploadMedia } from "./api";
 import Brand from "./Brand";
+import UiFontPicker from "./UiFont";
 import { RUNNING_STATUSES, statusLabel, type Project } from "./types";
 import { formatTime } from "./segments";
+
+/** 裝飾用插圖。圖檔放 frontend/public/art/<name>.png(不能放 assets,那是 Vite 打包的目錄),
+ *  還沒放的話整個元素自己消失,版面照常,不會留破圖。 */
+function Illustration({ name, className }: { name: string; className: string }) {
+  const [ok, setOk] = useState(true);
+  if (!ok) return null;
+  return (
+    <img className={className} src={`/art/${name}.png`} alt="" onError={() => setOk(false)} />
+  );
+}
 
 interface Upload {
   name: string;
@@ -64,6 +75,9 @@ export default function Home() {
       <header className="topbar">
         <Brand />
         <span className="topbar-note">本機字幕工具,檔案不離開你的電腦</span>
+        <span className="topbar-right">
+          <UiFontPicker />
+        </span>
       </header>
 
       <main className="home">
@@ -73,6 +87,22 @@ export default function Home() {
             setup.bat 自動安裝,裝完重開伺服器。
           </div>
         )}
+
+        <section className="hero">
+          <div className="hero-copy">
+            <h1 className="hero-title">
+              打字幕
+              <br />
+              不該比剪片久
+            </h1>
+            <p className="hero-sub">
+              丟一支影片進來,自動聽打、鍵盤校對、匯出 SRT 或直接把字幕燒進成品。
+              全程在這台電腦上跑,不上傳、不需要帳號。
+            </p>
+          </div>
+          <Illustration name="hero" className="hero-art" />
+        </section>
+
         <div
           className={"dropzone" + (dragging ? " dragging" : "")}
           onDragOver={(e) => {
@@ -138,7 +168,10 @@ export default function Home() {
         {projects === null ? (
           <p className="empty-hint">載入中…</p>
         ) : projects.length === 0 && uploads.length === 0 ? (
-          <p className="empty-hint">還沒有專案。丟一支影片進來,一兩分鐘後就有逐字稿。</p>
+          <div className="empty-state">
+            <Illustration name="empty" className="empty-art" />
+            <p className="empty-hint">還沒有專案。丟一支影片進來,一兩分鐘後就有逐字稿。</p>
+          </div>
         ) : (
           <section className="project-grid">
             {projects.map((p) => {

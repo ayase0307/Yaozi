@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import Editor from "./Editor";
 import Home from "./Home";
+import { applyUiFont, loadUiFont } from "./UiFont";
+
+// 進站就套上次選的介面字型,兩個頁面都算數
+applyUiFont(loadUiFont());
 
 function parseHash(): { page: "home" } | { page: "editor"; id: string } {
   const m = location.hash.match(/^#\/p\/([a-z0-9]+)/);

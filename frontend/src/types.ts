@@ -35,6 +35,17 @@ export interface Project {
   device: string | null;
 }
 
+/** 字幕外觀。size / outline / bottom 都是「佔畫面高度的百分比」,換解析度不用重設。 */
+export interface SubtitleStyle {
+  font: string;
+  size: number;
+  color: string;
+  outline_color: string;
+  outline: number;
+  bottom: number;
+  bold: boolean;
+}
+
 export interface DictEntry {
   id: string;
   wrong: string;

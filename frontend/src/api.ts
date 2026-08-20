@@ -1,4 +1,4 @@
-import type { BurnJob, DictEntry, FixJob, Project, Segment } from "./types";
+import type { BurnJob, DictEntry, FixJob, Project, Segment, SubtitleStyle } from "./types";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -63,6 +63,17 @@ export const api = {
     fetch(`/api/dictionary/${id}`, { method: "DELETE" }).then((r) =>
       json<{ entries: DictEntry[] }>(r)
     ),
+
+  getFonts: () => fetch("/api/fonts").then((r) => json<{ families: string[] }>(r)),
+
+  getStyle: () => fetch("/api/style").then((r) => json<SubtitleStyle>(r)),
+
+  saveStyle: (s: SubtitleStyle) =>
+    fetch("/api/style", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(s),
+    }).then((r) => json<SubtitleStyle>(r)),
 
   getLlmStatus: () =>
     fetch("/api/llm/status").then((r) => json<{ available: boolean }>(r)),

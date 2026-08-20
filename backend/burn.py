@@ -10,7 +10,7 @@ import subprocess
 import threading
 import traceback
 
-from . import config, exporter, storage
+from . import config, exporter, storage, style
 
 OUT_NAME = "export.mp4"
 
@@ -83,7 +83,9 @@ def start(pid: str) -> dict:
             raise RuntimeError("匯出已在進行中")
 
     width, height = _probe_size(media)
-    (d / "burn.ass").write_text(exporter.to_ass(segments, width, height), encoding="utf-8")
+    (d / "burn.ass").write_text(
+        exporter.to_ass(segments, width, height, style.load()), encoding="utf-8"
+    )
 
     job = {"status": "running", "progress": 0.0, "error": None, "cancel": False, "proc": None}
     with _lock:

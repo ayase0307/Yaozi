@@ -10,7 +10,19 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import burn, config, cuts, dictionary, exporter, llm, storage, transcriber, waveform
+from . import (
+    burn,
+    config,
+    cuts,
+    dictionary,
+    exporter,
+    fonts,
+    llm,
+    storage,
+    style,
+    transcriber,
+    waveform,
+)
 
 MEDIA_EXTS = {
     ".mp4", ".mov", ".mkv", ".webm", ".avi", ".mts", ".m2ts",
@@ -220,6 +232,21 @@ def add_dict_entry(body: dict = Body(...)):
 @app.delete("/api/dictionary/{entry_id}")
 def delete_dict_entry(entry_id: str):
     return {"entries": dictionary.remove(entry_id)}
+
+
+@app.get("/api/fonts")
+def list_fonts():
+    return {"families": fonts.list_families()}
+
+
+@app.get("/api/style")
+def get_style():
+    return style.load()
+
+
+@app.put("/api/style")
+def put_style(body: dict = Body(...)):
+    return style.save(body)
 
 
 @app.get("/api/llm/status")

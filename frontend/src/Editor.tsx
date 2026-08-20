@@ -19,7 +19,8 @@ import {
   uid,
 } from "./segments";
 import { diffParts } from "./diff";
-import SafeFrame, { SAFE_FRAMES, matchPresetByRatio } from "./SafeFrame";
+import SafeFrame, { SAFE_FRAMES, matchPresetByRatio, useVideoRect } from "./SafeFrame";
+import StylePanel from "./StylePanel";
 import {
   RUNNING_STATUSES,
   statusLabel,
@@ -29,6 +30,7 @@ import {
   type FixSuggestion,
   type Project,
   type Segment,
+  type SubtitleStyle,
 } from "./types";
 import Waveform from "./Waveform";
 
@@ -99,6 +101,9 @@ export default function Editor({ projectId }: { projectId: string }) {
   const [reviewItems, setReviewItems] = useState<FixSuggestion[] | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
 
+  const [subStyle, setSubStyle] = useState<SubtitleStyle | null>(null);
+  const [styleOpen, setStyleOpen] = useState(false);
+
   const [dictOpen, setDictOpen] = useState(false);
   const [dictEntries, setDictEntries] = useState<DictEntry[]>([]);
   const [dictWrong, setDictWrong] = useState("");
@@ -112,6 +117,7 @@ export default function Editor({ projectId }: { projectId: string }) {
   saveStateRef.current = saveState;
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRect = useVideoRect(videoRef);
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
   const loadedRef = useRef(false);
   const justLoadedRef = useRef<Segment[] | null>(null);
@@ -209,6 +215,14 @@ export default function Editor({ projectId }: { projectId: string }) {
     api
       .getLlmStatus()
       .then((s) => setLlmAvailable(s.available))
+      .catch(() => {});
+  }, []);
+
+  // 字幕外觀:載進來給影片上的預覽用,燒錄時後端會讀同一份設定
+  useEffect(() => {
+    api
+      .getStyle()
+      .then(setSubStyle)
       .catch(() => {});
   }, []);
 
@@ -925,6 +939,13 @@ export default function Editor({ projectId }: { projectId: string }) {
         <button className="btn small" onClick={openDict} title="管理錯字自動取代清單">
           詞庫
         </button>
+        <button
+          className="btn small"
+          onClick={() => setStyleOpen((v) => !v)}
+          title="字型、字級、顏色——影片上即時預覽,燒錄成品用同一組設定"
+        >
+          字幕外觀
+        </button>
         {llmAvailable &&
           (fixJob?.status === "running" ? (
             <button className="btn small" onClick={cancelFix} title="點擊取消">
@@ -972,7 +993,30 @@ export default function Editor({ projectId }: { projectId: string }) {
               }}
             />
             <SafeFrame videoRef={videoRef} frameKey={safeFrame} />
-            {activeText && <div className="subtitle-overlay">{activeText}</div>}
+            {activeText && subStyle && (
+              // 疊在影片實際畫面上,尺寸按同一組百分比換算,所見即為燒出來的樣子
+              <div
+                className="subtitle-overlay"
+                style={videoRect ?? { left: 0, top: 0, right: 0, bottom: 0 }}
+              >
+                <span
+                  className="subtitle-overlay-text"
+                  style={{
+                    fontFamily: `"${subStyle.font}"`,
+                    fontSize: (videoRect?.height ?? 0) * (subStyle.size / 100) || undefined,
+                    fontWeight: subStyle.bold ? 700 : 400,
+                    color: subStyle.color,
+                    bottom: `${subStyle.bottom}%`,
+                    WebkitTextStroke: `${
+                      (videoRect?.height ?? 0) * (subStyle.outline / 100)
+                    }px ${subStyle.outline_color}`,
+                    paintOrder: "stroke fill",
+                  }}
+                >
+                  {activeText}
+                </span>
+              </div>
+            )}
           </div>
           <div className="player-controls">
             <label className="wave-zoom-label" htmlFor="safeframe-select">
@@ -1070,6 +1114,14 @@ export default function Editor({ projectId }: { projectId: string }) {
           )}
         </section>
       </main>
+
+      {styleOpen && subStyle && (
+        <StylePanel
+          value={subStyle}
+          onChange={setSubStyle}
+          onClose={() => setStyleOpen(false)}
+        />
+      )}
 
       {dictOpen && (
         <div className="fix-panel" role="dialog" aria-label="詞庫">
