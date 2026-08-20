@@ -107,7 +107,11 @@ def apply_trim(segments: list[dict], trim: dict | None) -> list[dict]:
 def load_project(pid: str) -> dict | None:
     if not pid or "/" in pid or "\\" in pid or ".." in pid:
         return None
-    return _load_json(project_dir(pid) / "project.json")
+    meta = _load_json(project_dir(pid) / "project.json")
+    # 加剪輯功能之前建的專案沒有這個欄位,補上才不用寫 migration
+    if meta is not None:
+        meta.setdefault("trim", None)
+    return meta
 
 
 def save_project(meta: dict) -> None:
@@ -120,7 +124,7 @@ def list_projects() -> list[dict]:
     projects = []
     for d in config.PROJECTS_DIR.iterdir():
         if d.is_dir():
-            meta = _load_json(d / "project.json")
+            meta = load_project(d.name)
             if meta:
                 projects.append(meta)
     projects.sort(key=lambda m: m.get("created_at", 0), reverse=True)
