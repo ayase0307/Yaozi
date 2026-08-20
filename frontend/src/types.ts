@@ -79,10 +79,18 @@ export interface AsrSettings {
   split_chars: number;
 }
 
+/** 一個字型家族。name 是選單上顯示的(Windows 給的本地化名稱),
+ *  en 是同一個家族的英文名——瀏覽器常常只認得後者,所以兩個都要寫進 font stack。
+ *  兩個名字一樣時後端不會回 en。 */
+export interface FontOption {
+  name: string;
+  en?: string;
+}
+
 /** 依語系分好的字型清單,後端排好順序(中文在最前面)。 */
 export interface FontGroup {
   label: string;
-  fonts: string[];
+  fonts: FontOption[];
 }
 
 export interface DictEntry {
@@ -97,6 +105,19 @@ export interface FixSuggestion {
   new: string;
 }
 
+export type AiProvider = "claude" | "codex";
+
+export interface AiProviderInfo {
+  label: string;
+  available: boolean;
+}
+
+export interface AiStatus {
+  provider: AiProvider;
+  available: boolean;
+  providers: Record<AiProvider, AiProviderInfo>;
+}
+
 export interface FixJob {
   status: "idle" | "running" | "done" | "error" | "canceled";
   total?: number;
@@ -104,6 +125,8 @@ export interface FixJob {
   suggestions?: FixSuggestion[];
   error?: string | null;
   started_at?: number;
+  progress?: number;
+  provider?: AiProvider;
 }
 
 export interface TranslateJob {
@@ -113,6 +136,8 @@ export interface TranslateJob {
   target?: string;
   error?: string | null;
   started_at?: number;
+  progress?: number;
+  provider?: AiProvider;
 }
 
 export interface BurnJob {

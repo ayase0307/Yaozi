@@ -1,4 +1,4 @@
-"""用使用者已安裝的 Claude Code CLI(走訂閱)做字幕錯字校正。
+"""用使用者已安裝的 Claude Code / Codex CLI 做字幕錯字校正。
 
 設計原則(見 SPEC 3.5):
 - 指令自動尋路,找不到就整個功能隱藏,不影響其他功能
@@ -11,14 +11,17 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import traceback
 from pathlib import Path
 
-from . import dictionary, storage
+from . import config, dictionary, storage
 
 MODEL = os.environ.get("YAOZI_FIX_MODEL", "sonnet")
+PROVIDERS = ("claude", "codex")
+PROVIDER_LABELS = {"claude": "Claude Code", "codex": "Codex CLI"}
 BATCH_CHARS = 4000  # 每批的字元預算
 BATCH_LINES = 80
 TIMEOUT = 300
@@ -36,10 +39,12 @@ SCHEMA = json.dumps(
                         "t": {"type": "string"},
                     },
                     "required": ["i", "t"],
+                    "additionalProperties": False,
                 },
             }
         },
         "required": ["changes"],
+        "additionalProperties": False,
     },
     separators=(",", ":"),
 )
@@ -77,6 +82,35 @@ _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
 
 
+def _settings_file() -> Path:
+    return config.PROJECTS_DIR / "_ai.json"
+
+
+def load_settings() -> dict:
+    """讀取全域 AI 引擎設定；舊版專案預設仍使用 Claude。"""
+    try:
+        with _settings_file().open("r", encoding="utf-8") as fp:
+            provider = json.load(fp).get("provider")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        provider = None
+    return {"provider": provider if provider in PROVIDERS else "claude"}
+
+
+def save_settings(raw: dict) -> dict:
+    provider = raw.get("provider")
+    if provider not in PROVIDERS:
+        raise ValueError("AI 引擎必須是 claude 或 codex")
+    if find_provider(provider) is None:
+        raise ValueError(f"找不到 {PROVIDER_LABELS[provider]} 指令，請先安裝並登入")
+    config.PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    path = _settings_file()
+    tmp = path.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as fp:
+        json.dump({"provider": provider}, fp, ensure_ascii=False)
+    os.replace(tmp, path)
+    return {"provider": provider}
+
+
 def find_claude() -> list[str] | None:
     path = shutil.which("claude")
     if not path:
@@ -94,6 +128,49 @@ def find_claude() -> list[str] | None:
     if path.lower().endswith((".cmd", ".bat")):
         return ["cmd", "/c", path]
     return [path]
+
+
+def find_codex() -> list[str] | None:
+    path = shutil.which("codex")
+    if not path:
+        candidates = [
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WindowsApps" / "codex.exe",
+            Path(os.environ.get("APPDATA", "")) / "npm" / "codex.cmd",
+            Path.home() / ".local" / "bin" / "codex",
+        ]
+        for c in candidates:
+            if c.is_file():
+                path = str(c)
+                break
+    if not path:
+        return None
+    if path.lower().endswith((".cmd", ".bat")):
+        return ["cmd", "/c", path]
+    return [path]
+
+
+def find_provider(provider: str) -> list[str] | None:
+    if provider == "claude":
+        return find_claude()
+    if provider == "codex":
+        return find_codex()
+    return None
+
+
+def provider_status() -> dict:
+    selected = load_settings()["provider"]
+    providers = {
+        provider: {
+            "label": PROVIDER_LABELS[provider],
+            "available": find_provider(provider) is not None,
+        }
+        for provider in PROVIDERS
+    }
+    return {
+        "provider": selected,
+        "available": providers[selected]["available"],
+        "providers": providers,
+    }
 
 
 def structured(data: dict, what: str) -> dict:
@@ -119,10 +196,90 @@ def structured(data: dict, what: str) -> dict:
     return parsed
 
 
+def run_structured(
+    provider: str,
+    cmd: list[str],
+    prompt: str,
+    schema: str,
+    what: str,
+    timeout: int,
+) -> dict:
+    """用選定的 CLI 執行提示詞，回傳已通過 JSON Schema 的物件。"""
+    if provider == "claude":
+        proc = subprocess.run(
+            cmd
+            + [
+                "-p",
+                "--output-format", "json",
+                "--json-schema", schema,
+                "--model", MODEL,
+            ],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"Claude Code 執行失敗:{(proc.stderr or proc.stdout).strip()[-300:]}")
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            raise RuntimeError(f"Claude Code 回應格式錯誤:{proc.stdout.strip()[-300:]}") from None
+        if data.get("is_error") or data.get("subtype") != "success":
+            raise RuntimeError(f"Claude Code 回傳錯誤:{str(data.get('result'))[:300]}")
+        return structured(data, what)
+
+    if provider != "codex":
+        raise RuntimeError(f"不支援的 AI 引擎:{provider}")
+    with tempfile.TemporaryDirectory(prefix="yaozi-codex-") as tmp_dir:
+        work = Path(tmp_dir)
+        schema_path = work / "schema.json"
+        result_path = work / "result.json"
+        schema_path.write_text(schema, encoding="utf-8")
+        proc = subprocess.run(
+            cmd
+            + [
+                "exec",
+                "--ephemeral",
+                "--sandbox", "read-only",
+                "--skip-git-repo-check",
+                "--color", "never",
+                "--output-schema", str(schema_path),
+                "--output-last-message", str(result_path),
+                "-",
+            ],
+            input=prompt,
+            cwd=work,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+        if proc.returncode != 0:
+            message = (proc.stderr or proc.stdout).strip()[-500:]
+            raise RuntimeError(f"Codex CLI 執行失敗:{message or '(沒有錯誤訊息)'}")
+        try:
+            parsed = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            message = (proc.stderr or proc.stdout).strip()[-300:]
+            raise RuntimeError(f"Codex CLI 沒有回傳{what}結果:{message or '(空白回應)'}") from None
+        if not isinstance(parsed, dict):
+            raise RuntimeError(f"Codex CLI 的{what}結果格式不對")
+        return parsed
+
+
 def _public_state(job: dict | None) -> dict:
     if job is None:
         return {"status": "idle"}
-    return {k: job[k] for k in ("status", "total", "done", "suggestions", "error", "started_at")}
+    state = {
+        k: job[k]
+        for k in ("status", "total", "done", "suggestions", "error", "started_at", "provider")
+    }
+    state["progress"] = 1.0 if job["status"] == "done" else job["done"] / max(job["total"], 1)
+    return state
 
 
 def _fix_file(pid: str):
@@ -139,6 +296,7 @@ def _save_fix_file(pid: str, job: dict) -> None:
                 "total": job.get("total", 1),
                 "started_at": job.get("started_at"),
                 "suggestions": job.get("suggestions", []),
+                "provider": job.get("provider", load_settings()["provider"]),
             },
             fp,
             ensure_ascii=False,
@@ -163,6 +321,8 @@ def get_state(pid: str) -> dict:
                 "suggestions": data.get("suggestions", []),
                 "error": None,
                 "started_at": data.get("started_at"),
+                "provider": data.get("provider", load_settings()["provider"]),
+                "progress": 1.0,
             }
         except (OSError, json.JSONDecodeError):
             pass
@@ -194,9 +354,10 @@ def update_suggestions(pid: str, suggestions: list[dict]) -> None:
 
 
 def start(pid: str) -> dict:
-    cmd = find_claude()
+    provider = load_settings()["provider"]
+    cmd = find_provider(provider)
     if cmd is None:
-        raise RuntimeError("找不到 claude 指令,請先安裝 Claude Code")
+        raise RuntimeError(f"找不到 {PROVIDER_LABELS[provider]} 指令，請到設定切換或先完成安裝")
     segments = storage.load_subtitles(pid)["segments"]
     if not segments:
         raise RuntimeError("這個專案還沒有字幕")
@@ -221,6 +382,7 @@ def start(pid: str) -> dict:
         "error": None,
         "started_at": time.time(),
         "cancel": False,
+        "provider": provider,
     }
     with _lock:
         existing = _jobs.get(pid)
@@ -228,37 +390,25 @@ def start(pid: str) -> dict:
             raise RuntimeError("AI 校正已在進行中")
         _jobs[pid] = job
 
-    threading.Thread(target=_run, args=(pid, cmd, segments, batches, job), daemon=True).start()
+    threading.Thread(target=_run, args=(pid, provider, cmd, segments, batches, job), daemon=True).start()
     return _public_state(job)
 
 
-def _run_batch(cmd: list[str], segments: list[dict], indices: list[int]) -> list[dict]:
+def _run_batch(provider: str, cmd: list[str], segments: list[dict], indices: list[int]) -> list[dict]:
     payload = json.dumps(
         [{"i": i, "t": segments[i]["text"]} for i in indices], ensure_ascii=False
     )
     # 多行的提示詞不放命令列(npm 版 claude.cmd 經 cmd /c 轉手會壞),
     # 全部改走 stdin;命令列只留單行參數。
-    proc = subprocess.run(
-        cmd
-        + [
-            "-p",
-            "--output-format", "json",
-            "--json-schema", SCHEMA,
-            "--model", MODEL,
-        ],
-        input=f"{PROMPT}{_terms_block()}\n\n字幕內容:\n{payload}",
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=TIMEOUT,
+    out = run_structured(
+        provider,
+        cmd,
+        f"{PROMPT}{_terms_block()}\n\n字幕內容:\n{payload}",
+        SCHEMA,
+        "校正",
+        TIMEOUT,
     )
-    if proc.returncode != 0:
-        raise RuntimeError(f"claude 執行失敗:{(proc.stderr or proc.stdout).strip()[-300:]}")
-    data = json.loads(proc.stdout)
-    if data.get("is_error") or data.get("subtype") != "success":
-        raise RuntimeError(f"claude 回傳錯誤:{str(data.get('result'))[:300]}")
-    changes = structured(data, "校正").get("changes") or []
+    changes = out.get("changes") or []
 
     valid = set(indices)
     suggestions = []
@@ -270,13 +420,20 @@ def _run_batch(cmd: list[str], segments: list[dict], indices: list[int]) -> list
     return suggestions
 
 
-def _run(pid: str, cmd: list[str], segments: list[dict], batches: list[list[int]], job: dict) -> None:
+def _run(
+    pid: str,
+    provider: str,
+    cmd: list[str],
+    segments: list[dict],
+    batches: list[list[int]],
+    job: dict,
+) -> None:
     try:
         for indices in batches:
             if job["cancel"]:
                 job["status"] = "canceled"
                 return
-            suggestions = _run_batch(cmd, segments, indices)
+            suggestions = _run_batch(provider, cmd, segments, indices)
             with _lock:
                 job["suggestions"].extend(suggestions)
                 job["done"] += 1

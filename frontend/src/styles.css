@@ -2,6 +2,16 @@
    米白底、白色卡片、圓角膠囊按鈕、螢光綠強調色;
    時間碼一律綠色等寬字,播放中那句淺綠底。全系統字型,離線可用。 */
 
+/* 預設介面字型俐方體11號(Cubic 11,OFL-1.1)直接附在 repo 裡。
+   不寫 local():系統裝過的那份常常認不出中文家族名(GDI 回報「俐方體11號」、
+   瀏覽器只認得 name table 裡的 "Cubic 11"),掉回系統字就是使用者看到的 bug。
+   一律讀 repo 裡這份,反正是本機伺服器,2.7MB 讀起來沒有感覺。 */
+@font-face {
+  font-family: "俐方體11號";
+  src: url("/fonts/Cubic_11.ttf") format("truetype");
+  font-display: swap;
+}
+
 :root {
   --bg: #f4f4f1;
   --panel: #ffffff;
@@ -496,6 +506,27 @@ button {
   box-shadow: 0 0 0 3px var(--green-soft);
 }
 
+.url-input:disabled {
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+/* 缺 yt-dlp 時的說明。欄位停用著擺在那裡,比整塊消失好解釋。 */
+.url-missing {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.url-missing code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--panel-2);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
 /* ---- 字型選單 ---- */
 
 .fontpick {
@@ -682,6 +713,145 @@ button {
 .settings-check-note {
   color: var(--muted);
   font-size: 12.5px;
+}
+
+.ai-provider-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.ai-provider {
+  width: 100%;
+  min-height: 72px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s var(--ease-out);
+}
+
+.ai-provider:hover:not(:disabled) {
+  border-color: var(--green);
+  transform: translateY(-1px);
+}
+
+.ai-provider.selected {
+  border-color: var(--green-dark);
+  background: var(--green-softer);
+}
+
+.ai-provider:disabled {
+  cursor: not-allowed;
+}
+
+.ai-provider:not(.selected):disabled {
+  opacity: 0.58;
+}
+
+.ai-provider-mark {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  font: 700 11px/1 var(--mono);
+  letter-spacing: 0.04em;
+  background: var(--panel-2);
+}
+
+.ai-provider.selected .ai-provider-mark {
+  border-color: var(--green-dark);
+  background: var(--green);
+  color: var(--green-ink);
+}
+
+.ai-provider-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-provider-name {
+  font-weight: 720;
+  font-size: 14px;
+}
+
+.ai-provider-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ai-provider-state {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 650;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.ai-provider-state.ready {
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.ai-provider-state.missing {
+  background: #fdecec;
+  color: var(--danger);
+}
+
+.ai-provider-radio {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 4px var(--panel);
+  background: var(--panel);
+}
+
+.ai-provider.selected .ai-provider-radio {
+  border-color: var(--green-dark);
+  background: var(--green-dark);
+}
+
+.ai-provider-loading {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.ai-provider-loading span {
+  display: block;
+  height: 72px;
+  border-radius: 14px;
+  background: var(--panel-2);
+  animation: pulse-dot 1.3s ease-in-out infinite;
+}
+
+.ai-provider-loading span:last-child {
+  animation-delay: 0.16s;
+}
+
+.settings-error {
+  margin: 10px 0 0;
+  color: var(--danger);
+  font-size: 12.5px;
+}
+
+.ai-provider-footnote {
+  margin-top: 12px;
 }
 
 /* ---- 字幕模擬區 ---- */
@@ -1689,19 +1859,27 @@ a.btn {
   line-height: 1.6;
 }
 
-/* ---- AI 校正執行狀態卡 ---- */
+/* ---- 背景工作執行狀態卡 ---- */
 
-.fix-status {
+.job-status-stack {
   position: fixed;
   right: 16px;
   bottom: 16px;
-  width: 300px;
+  width: min(330px, calc(100vw - 32px));
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fix-status {
+  position: relative;
+  width: 100%;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 14px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18);
   padding: 12px 14px;
-  z-index: 40;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1721,6 +1899,26 @@ a.btn {
 .fix-status-info {
   font-size: 12.5px;
   color: var(--muted);
+}
+
+.ai-job-provider {
+  border-left: 1px solid var(--line);
+  padding-left: 8px;
+  color: var(--muted);
+  font: 600 10.5px/1.2 var(--mono);
+}
+
+.ai-job-percent {
+  color: var(--green-dark);
+  font: 750 18px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-progress-track.running .bar-fill {
+  min-width: 4px;
+  background: linear-gradient(90deg, var(--green) 0%, #9dec8f 50%, var(--green) 100%);
+  background-size: 200% 100%;
+  animation: pulse-slide 1.2s linear infinite;
 }
 
 /* 流動的綠色光帶:就算卡在同一批,看得出還在跑 */
@@ -2117,6 +2315,35 @@ a.btn {
 
   .topbar-note {
     display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .settings {
+    padding-inline: 14px;
+  }
+
+  .ai-provider {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .ai-provider-copy {
+    width: calc(100% - 50px);
+  }
+
+  .ai-provider-state {
+    margin-left: 50px;
+  }
+
+  .ai-provider-radio {
+    margin-left: auto;
+  }
+
+  .job-status-stack {
+    right: 10px;
+    bottom: 10px;
+    width: calc(100vw - 20px);
   }
 }
 

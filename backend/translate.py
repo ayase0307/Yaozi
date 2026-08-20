@@ -1,4 +1,4 @@
-"""字幕翻譯。走使用者已安裝的 Claude Code CLI(訂閱制,不用另外辦 API key)。
+"""字幕翻譯。走設定中選定的 Claude Code 或 Codex CLI。
 
 翻完直接寫回字幕的 trans 欄位,不像 AI 校正那樣要逐條審——譯文本來就會想自己改,
 在編輯器裡改比在 diff 面板裡按同意快。
@@ -6,7 +6,6 @@
 
 import json
 import os
-import subprocess
 import threading
 import time
 import traceback
@@ -29,10 +28,12 @@ SCHEMA = json.dumps(
                     "type": "object",
                     "properties": {"i": {"type": "integer"}, "t": {"type": "string"}},
                     "required": ["i", "t"],
+                    "additionalProperties": False,
                 },
             }
         },
         "required": ["lines"],
+        "additionalProperties": False,
     },
     separators=(",", ":"),
 )
@@ -65,7 +66,12 @@ def _file(pid: str):
 def _public(job: dict | None) -> dict:
     if job is None:
         return {"status": "idle"}
-    return {k: job[k] for k in ("status", "total", "done", "target", "error", "started_at")}
+    state = {
+        k: job[k]
+        for k in ("status", "total", "done", "target", "error", "started_at", "provider")
+    }
+    state["progress"] = 1.0 if job["status"] == "done" else job["done"] / max(job["total"], 1)
+    return state
 
 
 def get_state(pid: str) -> dict:
@@ -75,7 +81,14 @@ def get_state(pid: str) -> dict:
         return _public(job)
     try:
         with _file(pid).open("r", encoding="utf-8") as f:
-            return json.load(f)
+            state = json.load(f)
+        state.setdefault("provider", llm.load_settings()["provider"])
+        total = max(int(state.get("total") or 1), 1)
+        state.setdefault(
+            "progress",
+            1.0 if state.get("status") == "done" else int(state.get("done") or 0) / total,
+        )
+        return state
     except (OSError, json.JSONDecodeError):
         return {"status": "idle"}
 
@@ -101,9 +114,12 @@ def clear(pid: str) -> dict:
 
 
 def start(pid: str, target: str) -> dict:
-    cmd = llm.find_claude()
+    provider = llm.load_settings()["provider"]
+    cmd = llm.find_provider(provider)
     if cmd is None:
-        raise RuntimeError("找不到 claude 指令,請先安裝 Claude Code")
+        raise RuntimeError(
+            f"找不到 {llm.PROVIDER_LABELS[provider]} 指令，請到設定切換或先完成安裝"
+        )
     if target not in LANGUAGES:
         raise RuntimeError(f"不支援的語言:{target}")
     segments = storage.load_subtitles(pid)["segments"]
@@ -130,6 +146,7 @@ def start(pid: str, target: str) -> dict:
         "error": None,
         "started_at": time.time(),
         "cancel": False,
+        "provider": provider,
     }
     with _lock:
         existing = _jobs.get(pid)
@@ -137,30 +154,29 @@ def start(pid: str, target: str) -> dict:
             raise RuntimeError("翻譯已在進行中")
         _jobs[pid] = job
 
-    threading.Thread(target=_run, args=(pid, cmd, batches, job), daemon=True).start()
+    threading.Thread(target=_run, args=(pid, provider, cmd, batches, job), daemon=True).start()
     return _public(job)
 
 
-def _run_batch(cmd: list[str], segments: list[dict], indices: list[int], target: str) -> dict:
+def _run_batch(
+    provider: str,
+    cmd: list[str],
+    segments: list[dict],
+    indices: list[int],
+    target: str,
+) -> dict:
     payload = json.dumps(
         [{"i": i, "t": segments[i]["text"]} for i in indices], ensure_ascii=False
     )
     prompt = PROMPT.format(target=target) + _terms(target)
-    proc = subprocess.run(
-        cmd + ["-p", "--output-format", "json", "--json-schema", SCHEMA, "--model", llm.MODEL],
-        input=f"{prompt}\n\n字幕內容:\n{payload}",
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=TIMEOUT,
+    out = llm.run_structured(
+        provider,
+        cmd,
+        f"{prompt}\n\n字幕內容:\n{payload}",
+        SCHEMA,
+        "翻譯",
+        TIMEOUT,
     )
-    if proc.returncode != 0:
-        raise RuntimeError(f"claude 執行失敗:{(proc.stderr or proc.stdout).strip()[-300:]}")
-    data = json.loads(proc.stdout)
-    if data.get("is_error") or data.get("subtype") != "success":
-        raise RuntimeError(f"claude 回傳錯誤:{str(data.get('result'))[:300]}")
-    out = llm.structured(data, "翻譯")
 
     valid = set(indices)
     return {
@@ -178,7 +194,13 @@ def _terms(target: str) -> str:
     return f"\n\n這支影片會出現的專有名詞(先確認它們在{target}的正確譯法):\n{names}"
 
 
-def _run(pid: str, cmd: list[str], batches: list[list[int]], job: dict) -> None:
+def _run(
+    pid: str,
+    provider: str,
+    cmd: list[str],
+    batches: list[list[int]],
+    job: dict,
+) -> None:
     try:
         for indices in batches:
             if job["cancel"]:
@@ -187,7 +209,7 @@ def _run(pid: str, cmd: list[str], batches: list[list[int]], job: dict) -> None:
             # 每批都重讀:使用者可能一邊翻一邊改字幕,以最新內容為準
             data = storage.load_subtitles(pid)
             segments = data["segments"]
-            got = _run_batch(cmd, segments, indices, job["target"])
+            got = _run_batch(provider, cmd, segments, indices, job["target"])
             for i, text in got.items():
                 if i < len(segments):
                     segments[i]["trans"] = text

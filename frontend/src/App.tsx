@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Editor from "./Editor";
+import { useFontGroups } from "./FontPicker";
 import Home from "./Home";
 import Settings from "./Settings";
 import { applyUiFont, loadUiFont } from "./UiFont";
@@ -17,6 +18,12 @@ function parseHash(): { page: "home" | "settings" } | { page: "editor"; id: stri
 
 export default function App() {
   const [route, setRoute] = useState(parseHash);
+  // 在最外層拿字型清單:清單一回來整棵樹重畫,底下所有 fontStack() 才補得到英文名
+  const fontGroups = useFontGroups();
+
+  useEffect(() => {
+    if (fontGroups.length) applyUiFont(loadUiFont());
+  }, [fontGroups]);
 
   useEffect(() => {
     const onHash = () => setRoute(parseHash());

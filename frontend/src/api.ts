@@ -1,5 +1,7 @@
 import type {
   AsrSettings,
+  AiProvider,
+  AiStatus,
   BurnJob,
   DictEntry,
   FixJob,
@@ -25,7 +27,9 @@ async function json<T>(res: Response): Promise<T> {
 
 export const api = {
   getHealth: () =>
-    fetch("/api/health").then((r) => json<{ ffmpeg: boolean; claude: boolean }>(r)),
+    fetch("/api/health").then((r) =>
+      json<{ ffmpeg: boolean; claude: boolean; codex: boolean; ai_provider: AiProvider }>(r)
+    ),
 
   listProjects: () => fetch("/api/projects").then((r) => json<Project[]>(r)),
 
@@ -111,8 +115,17 @@ export const api = {
 
   getLlmStatus: () =>
     fetch("/api/llm/status").then((r) =>
-      json<{ available: boolean; languages: string[]; yt_dlp: boolean }>(r)
+      json<AiStatus & { languages: string[]; yt_dlp: boolean }>(r)
     ),
+
+  getAiSettings: () => fetch("/api/ai").then((r) => json<AiStatus>(r)),
+
+  saveAiSettings: (provider: AiProvider) =>
+    fetch("/api/ai", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider }),
+    }).then((r) => json<AiStatus>(r)),
 
   startTranslate: (id: string, target: string) =>
     fetch(`/api/projects/${id}/translate`, {

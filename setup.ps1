@@ -118,7 +118,10 @@ $model = Test-Path "models\models--Systran--faster-whisper-large-v3"
 Report "Whisper 模型" $model $(if ($model) { "models\ 已就緒" } else { "第一次辨識時會自動下載約 3GB" })
 
 $claude = Test-Cmd "claude"
-Report "Claude Code" $claude $(if ($claude) { "AI 校正可用" } else { "未安裝(選配):AI 校正功能會隱藏" })
+Report "Claude Code" $claude $(if ($claude) { "翻譯與 AI 校正可用" } else { "未安裝(選配)" })
+
+$codex = Test-Cmd "codex"
+Report "Codex CLI" $codex $(if ($codex) { "可在設定頁選為 AI 引擎" } else { "未安裝(選配)" })
 
 Write-Host ""
 Write-Host "完成!點兩下 start.bat 開始使用。" -ForegroundColor Green

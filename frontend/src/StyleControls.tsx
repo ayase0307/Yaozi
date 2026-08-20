@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { api } from "./api";
-import FontPicker from "./FontPicker";
+import FontPicker, { fontStack } from "./FontPicker";
 import type { SubtitleStyle } from "./types";
 
 // 斷行規則要跟 backend/exporter.py 的 wrap_text 一致,預覽才等於燒出來的樣子
@@ -57,7 +57,7 @@ export function subStyleCss(
         st.align === "left" ? "flex-start" : st.align === "right" ? "flex-end" : "center",
     },
     line: {
-      fontFamily: `"${st.font}"`,
+      fontFamily: fontStack(st.font),
       fontSize: px(st.size) || undefined,
       fontWeight: st.bold ? 700 : 400,
       fontStyle: st.italic ? "italic" : "normal",

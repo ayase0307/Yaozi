@@ -25,6 +25,7 @@ import StylePanel from "./StylePanel";
 import {
   RUNNING_STATUSES,
   statusLabel,
+  type AiProvider,
   type BurnJob,
   type DictEntry,
   type FixJob,
@@ -67,6 +68,17 @@ const HOTKEYS: [string, string][] = [
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
+const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
+  claude: "Claude Code",
+  codex: "Codex CLI",
+};
+
+function jobPercent(job: FixJob | TranslateJob | null): number {
+  if (!job) return 0;
+  const ratio = job.progress ?? (job.done ?? 0) / Math.max(job.total ?? 1, 1);
+  return Math.max(0, Math.min(100, Math.round(ratio * 100)));
+}
+
 interface EditingState {
   id: string;
   cursor: number;
@@ -100,6 +112,7 @@ export default function Editor({ projectId }: { projectId: string }) {
   const [query, setQuery] = useState("");
 
   const [llmAvailable, setLlmAvailable] = useState(false);
+  const [aiProvider, setAiProvider] = useState<AiProvider>("claude");
   const [languages, setLanguages] = useState<string[]>([]);
   const [transJob, setTransJob] = useState<TranslateJob | null>(null);
   const translating = transJob?.status === "running";
@@ -242,12 +255,13 @@ export default function Editor({ projectId }: { projectId: string }) {
     };
   }, [project?.status, projectId]);
 
-  // Claude Code CLI 可用性(不可用就整塊隱藏)
+  // 設定中選定的 AI CLI 可用性(不可用就整塊隱藏)
   useEffect(() => {
     api
       .getLlmStatus()
       .then((s) => {
         setLlmAvailable(s.available);
+        setAiProvider(s.provider);
         setLanguages(s.languages ?? []);
       })
       .catch(() => {});
@@ -319,22 +333,35 @@ export default function Editor({ projectId }: { projectId: string }) {
       api
         .getTranslate(projectId)
         .then((j) => {
-          setTransJob(j.status === "running" ? j : null);
+          setTransJob(j);
           mergeTrans();
-          if (j.status === "error") alert(`翻譯失敗:${j.error ?? "未知錯誤"}`);
+          if (j.status === "error") {
+            alert(`翻譯失敗:${j.error ?? "未知錯誤"}`);
+            setTransJob(null);
+          }
         })
         .catch(() => {});
     }, 2000);
     return () => clearInterval(timer);
   }, [translating, projectId, mergeTrans]);
 
-  // AI 校正、辨識進行時每秒跳動的計時器,讓使用者看得出工作還活著
+  // 完成時短暫保留 100% 狀態，讓最後一批不會一完成就整張卡消失。
   useEffect(() => {
-    if (fixJob?.status !== "running" && !running) return;
+    if (transJob?.status !== "done") return;
+    const timer = window.setTimeout(
+      () => setTransJob((current) => (current?.status === "done" ? null : current)),
+      1800
+    );
+    return () => window.clearTimeout(timer);
+  }, [transJob?.status]);
+
+  // AI 工作、辨識進行時每秒跳動的計時器,讓使用者看得出工作還活著
+  useEffect(() => {
+    if (fixJob?.status !== "running" && !translating && !running) return;
     setNowTick(Date.now());
     const timer = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [fixJob?.status, running]);
+  }, [fixJob?.status, translating, running]);
 
   // 播放中用 rAF 平滑更新時間(timeupdate 只有 4Hz,播放頭會頓)
   useEffect(() => {
@@ -1090,8 +1117,7 @@ export default function Editor({ projectId }: { projectId: string }) {
           languages.length > 0 &&
           (translating ? (
             <button className="btn small" onClick={cancelTranslate} title="點擊取消">
-              <span className="spinner" aria-hidden /> 翻譯中 {transJob?.done ?? 0}/
-              {transJob?.total ?? "?"}
+              <span className="spinner" aria-hidden /> 翻譯中 {jobPercent(transJob)}%
             </button>
           ) : (
             <details className="hotkey-menu" ref={transMenuRef}>
@@ -1113,11 +1139,14 @@ export default function Editor({ projectId }: { projectId: string }) {
         {llmAvailable &&
           (fixJob?.status === "running" ? (
             <button className="btn small" onClick={cancelFix} title="點擊取消">
-              <span className="spinner" aria-hidden /> AI 校正中 {fixJob.done ?? 0}/
-              {fixJob.total ?? "?"}
+              <span className="spinner" aria-hidden /> AI 校正中 {jobPercent(fixJob)}%
             </button>
           ) : (
-            <button className="btn small" onClick={startFix} title="用 Claude 檢查錯字與用語">
+            <button
+              className="btn small"
+              onClick={startFix}
+              title={`用 ${AI_PROVIDER_LABELS[aiProvider]} 檢查錯字與用語`}
+            >
               AI 校正
             </button>
           ))}
@@ -1344,74 +1373,46 @@ export default function Editor({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      {fixJob?.status === "running" && (
-        <div className="fix-status" role="status">
-          <div className="fix-status-head">
-            <span className="spinner" aria-hidden />
-            <span className="fix-title">AI 校正中</span>
-            <span className="toolbar-spacer" />
-            <button className="btn small" onClick={cancelFix}>
-              取消
-            </button>
-          </div>
-          <span className="bar fix-status-bar">
-            <span
-              className="bar-fill pulsing"
-              style={{
-                width: `${Math.max(
-                  ((fixJob.done ?? 0) / Math.max(fixJob.total ?? 1, 1)) * 100,
-                  5
-                )}%`,
-              }}
-            />
-          </span>
-          <div className="fix-status-info">
-            第 {Math.min((fixJob.done ?? 0) + 1, fixJob.total ?? 1)}/{fixJob.total ?? 1} 批 ·
-            已找到 {fixJob.suggestions?.length ?? 0} 個建議 · 已執行{" "}
-            {fixJob.started_at
-              ? Math.max(0, Math.floor(nowTick / 1000 - fixJob.started_at))
-              : 0}{" "}
-            秒
-          </div>
-        </div>
-      )}
-
-      {burnJob && (burnJob.status === "running" || burnJob.status === "done") && (
-        <div
-          className="fix-status"
-          role="status"
-          style={{ bottom: fixJob?.status === "running" ? 150 : 16 }}
-        >
-          <div className="fix-status-head">
-            {burnJob.status === "running" && <span className="spinner" aria-hidden />}
-            <span className="fix-title">
-              {burnJob.status === "running" ? "匯出影片中" : "影片匯出完成"}
-            </span>
-            <span className="toolbar-spacer" />
-            {burnJob.status === "running" ? (
-              <button className="btn small" onClick={cancelBurn}>
-                取消
-              </button>
-            ) : (
-              <>
-                <a className="btn small primary" href={api.burnFileUrl(projectId)}>
-                  下載影片
-                </a>
-                <button className="btn small" onClick={() => setBurnJob(null)}>
-                  關閉
-                </button>
-              </>
-            )}
-          </div>
-          <span className="bar fix-status-bar">
-            <span
-              className={"bar-fill" + (burnJob.status === "running" ? " pulsing" : "")}
-              style={{ width: `${Math.max(burnJob.progress * 100, 3)}%` }}
-            />
-          </span>
-          {burnJob.status === "running" && (
-            <div className="fix-status-info">
-              {Math.round(burnJob.progress * 100)}% · NVENC 硬體編碼(失敗自動改用 CPU)
+      {(fixJob?.status === "running" ||
+        transJob?.status === "running" ||
+        transJob?.status === "done" ||
+        burnJob?.status === "running" ||
+        burnJob?.status === "done") && (
+        <div className="job-status-stack">
+          {(transJob?.status === "running" || transJob?.status === "done") && (
+            <AiJobStatus kind="translate" job={transJob} now={nowTick} onCancel={cancelTranslate} />
+          )}
+          {fixJob?.status === "running" && (
+            <AiJobStatus kind="fix" job={fixJob} now={nowTick} onCancel={cancelFix} />
+          )}
+          {burnJob && (burnJob.status === "running" || burnJob.status === "done") && (
+            <div className="fix-status" role="status">
+              <div className="fix-status-head">
+                {burnJob.status === "running" && <span className="spinner" aria-hidden />}
+                <span className="fix-title">
+                  {burnJob.status === "running" ? "匯出影片中" : "影片匯出完成"}
+                </span>
+                <span className="toolbar-spacer" />
+                {burnJob.status === "running" ? (
+                  <button className="btn small" onClick={cancelBurn}>取消</button>
+                ) : (
+                  <>
+                    <a className="btn small primary" href={api.burnFileUrl(projectId)}>下載影片</a>
+                    <button className="btn small" onClick={() => setBurnJob(null)}>關閉</button>
+                  </>
+                )}
+              </div>
+              <span className="bar fix-status-bar">
+                <span
+                  className={"bar-fill" + (burnJob.status === "running" ? " pulsing" : "")}
+                  style={{ width: `${Math.max(burnJob.progress * 100, 3)}%` }}
+                />
+              </span>
+              {burnJob.status === "running" && (
+                <div className="fix-status-info">
+                  {Math.round(burnJob.progress * 100)}% · NVENC 硬體編碼(失敗自動改用 CPU)
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1454,6 +1455,51 @@ export default function Editor({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function AiJobStatus({
+  kind,
+  job,
+  now,
+  onCancel,
+}: {
+  kind: "translate" | "fix";
+  job: TranslateJob | FixJob;
+  now: number;
+  onCancel: () => void;
+}) {
+  const percent = jobPercent(job);
+  const total = Math.max(job.total ?? 1, 1);
+  const done = Math.min(job.done ?? 0, total);
+  const currentBatch = job.status === "done" ? total : Math.min(done + 1, total);
+  const seconds = job.started_at ? Math.max(0, Math.floor(now / 1000 - job.started_at)) : 0;
+  const provider = job.provider ? AI_PROVIDER_LABELS[job.provider] : "AI CLI";
+  const translatingJob = kind === "translate" ? (job as TranslateJob) : null;
+  const fixingJob = kind === "fix" ? (job as FixJob) : null;
+  const title = kind === "translate" ? "字幕翻譯" : "AI 校正";
+
+  return (
+    <div className="fix-status ai-job-status" role="status" aria-live="polite">
+      <div className="fix-status-head">
+        {job.status === "running" && <span className="spinner" aria-hidden />}
+        <span className="fix-title">{title}{job.status === "done" ? "完成" : "中"}</span>
+        <span className="ai-job-provider">{provider}</span>
+        <span className="toolbar-spacer" />
+        <strong className="ai-job-percent">{percent}%</strong>
+        {job.status === "running" && (
+          <button className="btn small" onClick={onCancel}>取消</button>
+        )}
+      </div>
+      <span className={"bar fix-status-bar ai-progress-track " + job.status}>
+        <span className="bar-fill" style={{ width: `${percent}%` }} />
+      </span>
+      <div className="fix-status-info">
+        第 {currentBatch}/{total} 批 · {translatingJob
+          ? `翻成${translatingJob.target ?? "目標語言"}`
+          : `已找到 ${fixingJob?.suggestions?.length ?? 0} 個建議`} · {seconds} 秒
+      </div>
     </div>
   );
 }

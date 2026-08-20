@@ -5,7 +5,7 @@ import FontPicker from "./FontPicker";
 import StyleControls from "./StyleControls";
 import { applyUiSize, loadUiSize } from "./UiSize";
 import { loadUiFont, saveUiFont } from "./UiFont";
-import type { AsrSettings, SubtitleStyle } from "./types";
+import type { AiProvider, AiStatus, AsrSettings, SubtitleStyle } from "./types";
 
 /** 設定頁。放的是「跨專案的全域設定」——介面長相、字幕外觀、環境檢查;
  *  只跟單一專案有關的東西(安全框、詞庫套用)留在編輯器裡。 */
@@ -14,12 +14,21 @@ export default function Settings() {
   const [uiSize, setUiSize] = useState(loadUiSize);
   const [style, setStyle] = useState<SubtitleStyle | null>(null);
   const [asr, setAsr] = useState<AsrSettings | null>(null);
-  const [health, setHealth] = useState<{ ffmpeg: boolean; claude: boolean } | null>(null);
+  const [health, setHealth] = useState<{
+    ffmpeg: boolean;
+    claude: boolean;
+    codex: boolean;
+    ai_provider: AiProvider;
+  } | null>(null);
+  const [ai, setAi] = useState<AiStatus | null>(null);
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   useEffect(() => {
     api.getStyle().then(setStyle).catch(() => {});
     api.getAsr().then(setAsr).catch(() => {});
     api.getHealth().then(setHealth).catch(() => {});
+    api.getAiSettings().then(setAi).catch(() => setAiError("無法讀取 AI 引擎設定"));
   }, []);
 
   const pickFont = (f: string) => {
@@ -30,6 +39,17 @@ export default function Settings() {
   const pickSize = (n: number) => {
     setUiSize(n);
     applyUiSize(n, true);
+  };
+
+  const pickAi = (provider: AiProvider) => {
+    if (!ai || ai.provider === provider || !ai.providers[provider].available || aiSaving) return;
+    setAiSaving(true);
+    setAiError("");
+    api
+      .saveAiSettings(provider)
+      .then(setAi)
+      .catch((e: Error) => setAiError(e.message))
+      .finally(() => setAiSaving(false));
   };
 
   return (
@@ -98,13 +118,71 @@ export default function Settings() {
         </section>
 
         <section className="settings-card">
+          <h2 className="settings-title">AI 引擎</h2>
+          <p className="settings-sub">
+            翻譯與 AI 校正共用這個選擇，直接使用你已登入的 CLI，不需要另外填 API key。
+          </p>
+          {ai ? (
+            <div className="ai-provider-list" role="radiogroup" aria-label="AI 引擎">
+              {(["claude", "codex"] as const).map((provider) => {
+                const info = ai.providers[provider];
+                const selected = ai.provider === provider;
+                return (
+                  <button
+                    key={provider}
+                    type="button"
+                    className={"ai-provider" + (selected ? " selected" : "")}
+                    role="radio"
+                    aria-checked={selected}
+                    disabled={!info.available || aiSaving}
+                    onClick={() => pickAi(provider)}
+                  >
+                    <span className="ai-provider-mark" aria-hidden>
+                      {provider === "claude" ? "CL" : "CX"}
+                    </span>
+                    <span className="ai-provider-copy">
+                      <span className="ai-provider-name">{info.label}</span>
+                      <span className="ai-provider-note">
+                        {provider === "claude"
+                          ? "沿用 Claude Code 的訂閱與登入狀態"
+                          : "使用 Codex CLI 的預設模型與登入狀態"}
+                      </span>
+                    </span>
+                    <span
+                      className={"ai-provider-state" + (info.available ? " ready" : " missing")}
+                    >
+                      {selected && aiSaving ? "切換中" : info.available ? "可使用" : "未安裝"}
+                    </span>
+                    <span className="ai-provider-radio" aria-hidden />
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="ai-provider-loading" aria-label="AI 引擎載入中">
+              <span />
+              <span />
+            </div>
+          )}
+          {aiError && <p className="settings-error" role="alert">{aiError}</p>}
+          <p className="settings-sub ai-provider-footnote">
+            切換只影響之後開始的工作；已在執行的翻譯或校正會繼續使用原本的引擎。
+          </p>
+        </section>
+
+        <section className="settings-card">
           <h2 className="settings-title">環境</h2>
           <div className="settings-checks">
             <Check ok={health?.ffmpeg} label="ffmpeg" note="沒有就無法辨識與匯出,跑 setup.bat 安裝" />
             <Check
               ok={health?.claude}
               label="Claude Code CLI"
-              note="沒有就只是少了 AI 校正,其他功能照常"
+              note="可作為翻譯與 AI 校正引擎"
+            />
+            <Check
+              ok={health?.codex}
+              label="Codex CLI"
+              note="可在上方切換成目前的 AI 引擎"
             />
           </div>
         </section>

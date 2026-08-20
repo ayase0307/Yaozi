@@ -11,7 +11,46 @@ import type { FontGroup } from "./types";
 
 let cache: FontGroup[] | null = null;
 
-/** 字型清單整個 app 共用一份,開幾次面板都只打一次 API。 */
+/** 本地化家族名 → 英文家族名。清單還沒回來之前是空的,fontStack() 就只吐原名。 */
+const alias = new Map<string, string>();
+
+const injected = new Set<string>();
+const quote = (s: string) => `"${s.replace(/["\\]/g, "\\$&")}"`;
+const BUNDLED_FONTS = new Set(["俐方體11號"]);
+const webFamily = (font: string) => `Yaozi Web ${font}`;
+
+/** 幫選中的系統字型補一份 @font-face，直接從後端讀實際檔案。
+ *
+ *  Windows 一個字型有好幾種名字(GDI 家族名、排版家族名、PostScript 名),瀏覽器只認
+ *  其中一種,對不上就默默掉回系統預設字——這台機器 424 個字型有 116 個是這樣,使用者
+ *  看到的就是「選了沒反應」。讀檔案沒有這層不確定性。
+ *
+ *  @font-face 使用獨立的 Yaozi Web 名稱，不能再用原家族名：預設俐方體已經有一條
+ *  指向 repo 內字型的規則，同名動態規則若 API 失敗會把正確規則蓋掉。
+ *
+ *  只對真的套用了的字型做。選單裡幾百個項目每個都下載一份字型檔太誇張。 */
+function ensureFontFile(font: string): void {
+  if (BUNDLED_FONTS.has(font) || injected.has(font)) return;
+  injected.add(font);
+  const el = document.createElement("style");
+  el.dataset.yaoziFont = font;
+  el.textContent = `@font-face{font-family:${quote(webFamily(font))};src:url("/api/fontfile?name=${encodeURIComponent(font)}");font-display:swap}`;
+  document.head.appendChild(el);
+}
+
+/** 字型名稱轉成 CSS 的 font-family 值,順便確保這個字型掛得上去。
+ *  空字串代表「不指定」,交給呼叫端決定。 */
+export function fontStack(font: string): string {
+  if (!font) return "";
+  ensureFontFile(font);
+  const en = alias.get(font);
+  const names = BUNDLED_FONTS.has(font) ? [font] : [webFamily(font), font];
+  if (en && en !== font) names.push(en);
+  return names.map(quote).join(", ");
+}
+
+/** 字型清單整個 app 共用一份,開幾次面板都只打一次 API。
+ *  App 最外層也呼叫一次:清單一回來整棵樹重畫,fontStack() 才會補上英文名。 */
 export function useFontGroups(): FontGroup[] {
   const [groups, setGroups] = useState<FontGroup[]>(cache ?? []);
   useEffect(() => {
@@ -20,6 +59,9 @@ export function useFontGroups(): FontGroup[] {
       .getFonts()
       .then((r) => {
         cache = r.groups;
+        for (const g of r.groups) {
+          for (const f of g.fonts) if (f.en) alias.set(f.name, f.en);
+        }
         setGroups(r.groups);
       })
       .catch(() => {});
@@ -62,7 +104,13 @@ export default function FontPicker({
     const q = query.trim().toLowerCase();
     if (!q) return groups;
     return groups
-      .map((g) => ({ ...g, fonts: g.fonts.filter((f) => f.toLowerCase().includes(q)) }))
+      .map((g) => ({
+        // 英文名也吃搜尋:打 "gensen" 找得到「源泉圓體丹」
+        ...g,
+        fonts: g.fonts.filter(
+          (f) => f.name.toLowerCase().includes(q) || f.en?.toLowerCase().includes(q)
+        ),
+      }))
       .filter((g) => g.fonts.length);
   }, [groups, query]);
 
@@ -77,7 +125,7 @@ export default function FontPicker({
       <button
         type="button"
         className="fontpick-btn"
-        style={value ? { fontFamily: `"${value}"` } : undefined}
+        style={value ? { fontFamily: fontStack(value) } : undefined}
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
       >
@@ -111,13 +159,13 @@ export default function FontPicker({
                 </div>
                 {g.fonts.map((f) => (
                   <button
-                    key={f}
+                    key={f.name}
                     type="button"
-                    className={"fontpick-item" + (f === value ? " on" : "")}
-                    style={{ fontFamily: `"${f}"` }}
-                    onClick={() => pick(f)}
+                    className={"fontpick-item" + (f.name === value ? " on" : "")}
+                    style={{ fontFamily: f.en ? `"${f.name}", "${f.en}"` : `"${f.name}"` }}
+                    onClick={() => pick(f.name)}
                   >
-                    {f}
+                    {f.name}
                   </button>
                 ))}
               </div>

@@ -25,7 +25,9 @@ export default function Home() {
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [dragging, setDragging] = useState(false);
   const [ffmpegOk, setFfmpegOk] = useState(true);
-  const [ytOk, setYtOk] = useState(false);
+  // null = 還沒問到。沒有 yt-dlp 時要照樣把欄位畫出來、只是停用,
+  // 整塊消失只會讓人以為功能被拿掉了(之前就是這樣)。
+  const [ytOk, setYtOk] = useState<boolean | null>(null);
   const [url, setUrl] = useState("");
   const [urlBusy, setUrlBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -160,21 +162,35 @@ export default function Home() {
           />
         </div>
 
-        {ytOk && (
-          <form className="url-form" onSubmit={submitUrl}>
-            <span className="url-label">或貼網址</span>
-            <input
-              className="url-input"
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://www.youtube.com/watch?v=…"
-              aria-label="影片網址"
-            />
-            <button className="btn primary" type="submit" disabled={!url.trim() || urlBusy}>
-              {urlBusy ? "讀取中…" : "下載並辨識"}
-            </button>
-          </form>
+        {ytOk !== null && (
+          <>
+            <form className="url-form" onSubmit={submitUrl}>
+              <span className="url-label">或貼網址</span>
+              <input
+                className="url-input"
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=…"
+                aria-label="影片網址"
+                disabled={!ytOk}
+              />
+              <button
+                className="btn primary"
+                type="submit"
+                disabled={!ytOk || !url.trim() || urlBusy}
+              >
+                {urlBusy ? "讀取中…" : "下載並辨識"}
+              </button>
+            </form>
+            {!ytOk && (
+              <p className="url-missing">
+                這台電腦的環境裡沒有 yt-dlp,貼網址下載暫時不能用。跑一次專案資料夾裡的
+                setup.bat 就會補裝(或自己下 <code>.venv\Scripts\pip install yt-dlp</code>),
+                裝完重開伺服器。
+              </p>
+            )}
+          </>
         )}
 
         {uploads.length > 0 && (

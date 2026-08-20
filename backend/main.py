@@ -83,9 +83,12 @@ def _get_project_or_404(pid: str) -> dict:
 
 @app.get("/api/health")
 def health():
+    ai = llm.provider_status()
     return {
         "ffmpeg": config.ffmpeg_available(),
         "claude": llm.find_claude() is not None,
+        "codex": llm.find_codex() is not None,
+        "ai_provider": ai["provider"],
     }
 
 
@@ -262,6 +265,31 @@ def list_fonts():
     return {"groups": fonts.grouped()}
 
 
+# 副檔名 → MIME。認不得就當 TrueType,瀏覽器實際是看檔頭而不是這個值
+_FONT_MIME = {
+    ".ttf": "font/ttf", ".otf": "font/otf", ".ttc": "font/collection",
+    ".otc": "font/collection", ".woff": "font/woff", ".woff2": "font/woff2",
+}
+
+
+@app.get("/api/fontfile")
+def get_font_file(name: str):
+    """把系統字型檔本身送給瀏覽器,前端用 @font-face 掛上去。
+
+    只靠家族名讓瀏覽器自己找,認不出來的會默默掉回系統預設字(這台機器 424 個字型
+    裡有 116 個是這樣)——使用者看到的就是「選了字型沒反應」。路徑一律由 fonts.py
+    的註冊表對照表決定,不拿 name 去拼路徑。
+    """
+    path = fonts.file_for(name)
+    if path is None or not any(path.is_relative_to(d) for d in fonts.FONT_DIRS):
+        raise HTTPException(404, "找不到這個字型")
+    return FileResponse(
+        path,
+        media_type=_FONT_MIME.get(path.suffix.lower(), "font/ttf"),
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/api/style")
 def get_style():
     return style.load()
@@ -285,10 +313,24 @@ def put_asr(body: dict = Body(...)):
 @app.get("/api/llm/status")
 def llm_status():
     return {
-        "available": llm.find_claude() is not None,
+        **llm.provider_status(),
         "languages": translate.LANGUAGES,
         "yt_dlp": fetcher.available(),
     }
+
+
+@app.get("/api/ai")
+def get_ai_settings():
+    return llm.provider_status()
+
+
+@app.put("/api/ai")
+def put_ai_settings(body: dict = Body(...)):
+    try:
+        llm.save_settings(body)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return llm.provider_status()
 
 
 @app.post("/api/projects/{pid}/translate")
