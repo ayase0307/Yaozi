@@ -140,7 +140,7 @@ def _run(pid: str, d, media_name: str, duration: float, job: dict) -> None:
                 job["status"] = "done"
                 return
             last_err = err_file.read_text(encoding="utf-8", errors="replace").strip()[-300:]
-            print(f"[vidscribe] {vcodec}+{acodec} 匯出失敗,換下一個組合:{last_err}")
+            print(f"[yaozi] {vcodec}+{acodec} 匯出失敗,換下一個組合:{last_err}")
         raise RuntimeError(f"ffmpeg 匯出失敗:{last_err}")
     except Exception as e:
         traceback.print_exc()

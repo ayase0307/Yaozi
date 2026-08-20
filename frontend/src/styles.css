@@ -1,4 +1,4 @@
-/* ---- VidScribe 設計基調(對齊 What'Sub 風格) ----
+/* ---- 咬字 設計基調(對齊 What'Sub 風格) ----
    米白底、白色卡片、圓角膠囊按鈕、螢光綠強調色;
    時間碼一律綠色等寬字,播放中那句淺綠底。全系統字型,離線可用。 */
 
@@ -24,6 +24,8 @@
   --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
   /* 設定頁可調(UiSize.tsx),點陣介面字型需要放大到 11 的倍數才銳利 */
   --ui-size: 15px;
+  /* 動畫曲線:起步快、收尾拖很長的 expo,是「看起來貴」的那種手感 */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * {
@@ -1617,6 +1619,31 @@ a.btn {
   accent-color: var(--green);
 }
 
+/* 提示詞是多行輸入,擠不進一列的 flex,整列改成上下排 */
+.style-row-stack {
+  align-items: flex-start;
+}
+
+.asr-prompt {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.asr-prompt:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+
 .style-value {
   width: 92px;
   flex-shrink: 0;
@@ -1852,6 +1879,265 @@ a.btn {
   .topbar-note {
     display: none;
   }
+}
+
+/* ---- 動態 ----
+   規則:只用 transform 與 opacity(不會觸發重排,永遠 60fps)、位移都很小、
+   收尾很慢的 expo 曲線。上面那條 prefers-reduced-motion 會把這一整段關掉。 */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+
+@keyframes hero-in {
+  from {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+
+/* 橫幅極慢的推鏡,靜態畫面才不會死板 */
+@keyframes hero-drift {
+  to {
+    transform: scale(1.06) translateX(-1.5%);
+  }
+}
+
+@keyframes float-y {
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes sweep {
+  to {
+    transform: translateX(320%) skewX(-18deg);
+  }
+}
+
+/* 首頁區塊依序浮上來(橫幅先、其他每個晚 70ms) */
+.home > * {
+  animation: rise 0.7s var(--ease-out) backwards;
+}
+.home > *:nth-child(2) {
+  animation-delay: 0.07s;
+}
+.home > *:nth-child(3) {
+  animation-delay: 0.14s;
+}
+.home > *:nth-child(4) {
+  animation-delay: 0.21s;
+}
+.home > *:nth-child(n + 5) {
+  animation-delay: 0.28s;
+}
+
+.hero {
+  animation: fade-in 0.9s var(--ease-out) backwards;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.hero-bg {
+  animation: hero-in 1.4s var(--ease-out) backwards,
+    hero-drift 26s ease-in-out 1.4s infinite alternate;
+}
+
+.hero-title {
+  animation: rise 0.9s var(--ease-out) 0.15s backwards;
+}
+
+.hero-sub {
+  animation: rise 0.9s var(--ease-out) 0.28s backwards;
+}
+
+/* 專案卡:進場依序、滑過抬起來 */
+.project-card {
+  animation: rise 0.55s var(--ease-out) backwards;
+  transition: transform 0.45s var(--ease-out), box-shadow 0.45s var(--ease-out),
+    border-color 0.25s;
+}
+.project-card:nth-child(2) {
+  animation-delay: 0.05s;
+}
+.project-card:nth-child(3) {
+  animation-delay: 0.1s;
+}
+.project-card:nth-child(4) {
+  animation-delay: 0.15s;
+}
+.project-card:nth-child(n + 5) {
+  animation-delay: 0.2s;
+}
+
+.project-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--green);
+  box-shadow: 0 14px 30px rgba(29, 165, 15, 0.14);
+}
+
+.dropzone {
+  transition: border-color 0.25s, background 0.25s, transform 0.45s var(--ease-out),
+    box-shadow 0.45s var(--ease-out);
+}
+
+.dropzone:hover {
+  transform: translateY(-2px);
+}
+
+.dropzone.dragging {
+  transform: scale(1.012);
+  box-shadow: 0 16px 40px rgba(56, 211, 33, 0.2);
+}
+
+/* 按鈕:按下去有回饋,主要按鈕滑過時有一道光掃過 */
+.btn,
+.play-btn,
+.icon-btn {
+  transition: background 0.2s, border-color 0.2s, filter 0.2s,
+    transform 0.25s var(--ease-out), box-shadow 0.3s var(--ease-out);
+}
+
+.btn:active,
+.play-btn:active,
+.icon-btn:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.btn.primary {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(56, 211, 33, 0.38);
+}
+
+.btn.primary::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  bottom: -50%;
+  left: -60%;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: translateX(-320%) skewX(-18deg);
+}
+
+.btn.primary:hover::after {
+  animation: sweep 0.8s var(--ease-out);
+}
+
+.play-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 18px rgba(56, 211, 33, 0.4);
+}
+
+/* 品牌:滑過長出一條綠色底線 */
+.brand-link {
+  position: relative;
+}
+
+.brand-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -5px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--green);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.45s var(--ease-out);
+}
+
+.brand-link:hover::after {
+  transform: scaleX(1);
+}
+
+/* 插圖慢慢上下浮,離線區塊那張最明顯 */
+.mascot-art {
+  animation: rise 0.8s var(--ease-out) backwards, float-y 7s ease-in-out 0.8s infinite;
+}
+
+.empty-art {
+  animation: float-y 6s ease-in-out infinite;
+}
+
+.settings-card {
+  animation: rise 0.6s var(--ease-out) backwards;
+}
+.settings-card:nth-child(2) {
+  animation-delay: 0.06s;
+}
+.settings-card:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.settings-card:nth-child(n + 4) {
+  animation-delay: 0.18s;
+}
+
+/* 彈出面板一律用同一種進場,整個介面的節奏才一致 */
+.hotkey-panel,
+.export-items,
+.fontpick-pop,
+.trans-panel {
+  animation: pop-in 0.28s var(--ease-out) backwards;
+}
+
+.fix-panel,
+.fix-status {
+  animation: rise 0.4s var(--ease-out) backwards;
+}
+
+/* 播放中那句:左邊長出一條綠色軌條,眼睛比較好跟 */
+.sub-row {
+  position: relative;
+  transition: background 0.25s;
+}
+
+.sub-row.active::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--green-dark);
+  animation: rail 0.35s var(--ease-out) backwards;
+}
+
+@keyframes rail {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+}
+
+.bar-fill {
+  transition: width 0.45s var(--ease-out);
+}
+
+.upload-item,
+.health-banner {
+  animation: rise 0.45s var(--ease-out) backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {

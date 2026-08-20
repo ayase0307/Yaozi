@@ -1,4 +1,4 @@
-﻿# VidScribe 一鍵安裝與環境體檢
+﻿# 咬字 一鍵安裝與環境體檢
 # 用法:點兩下 setup.bat,或在 PowerShell 執行 .\setup.ps1
 # 重複執行安全:只補缺的東西,不會重裝已存在的。
 
@@ -38,7 +38,7 @@ function Install-Winget($id, $label) {
     Refresh-Path
 }
 
-Write-Host "=== VidScribe 環境安裝 ===" -ForegroundColor Green
+Write-Host "=== 咬字 環境安裝 ===" -ForegroundColor Green
 
 # --- 1. Python ---
 $python = Get-Python

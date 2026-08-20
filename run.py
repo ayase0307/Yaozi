@@ -5,7 +5,7 @@ import uvicorn
 from backend import config
 
 if __name__ == "__main__":
-    print(f"VidScribe 啟動中: http://{config.HOST}:{config.PORT}")
+    print(f"咬字 啟動中: http://{config.HOST}:{config.PORT}")
     print("要關閉的話按 Ctrl+C,或直接關掉這個視窗。")
     try:
         uvicorn.run("backend.main:app", host=config.HOST, port=config.PORT)

@@ -9,18 +9,19 @@ os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("HF_HUB_VERBOSITY", "error")
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-PROJECTS_DIR = Path(os.environ.get("VIDSCRIBE_DATA", str(ROOT_DIR / "projects")))
+PROJECTS_DIR = Path(os.environ.get("YAOZI_DATA", str(ROOT_DIR / "projects")))
 FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
 
 # 辨識模型,首次使用會自動下載(large-v3 約 3GB)
-MODEL_NAME = os.environ.get("VIDSCRIBE_MODEL", "large-v3")
+MODEL_NAME = os.environ.get("YAOZI_MODEL", "large-v3")
 # 模型存在專案資料夾裡:搬資料夾就等於連模型一起搬,不用重新下載
-MODELS_DIR = Path(os.environ.get("VIDSCRIBE_MODELS", str(ROOT_DIR / "models")))
-# "zh" = 固定中文(會加繁體 prompt 與 OpenCC 轉換);"auto" = 自動偵測語言
-LANGUAGE = os.environ.get("VIDSCRIBE_LANG", "zh")
+MODELS_DIR = Path(os.environ.get("YAOZI_MODELS", str(ROOT_DIR / "models")))
+# 辨識語言的預設值(設定頁可改,存進 projects/_asr.json)。
+# "auto" = 自動偵測;鎖成 "zh" 之類的固定語言時,非該語言的影片會被硬翻成幻覺
+LANGUAGE = os.environ.get("YAOZI_LANG", "auto")
 
-HOST = os.environ.get("VIDSCRIBE_HOST", "127.0.0.1")
-PORT = int(os.environ.get("VIDSCRIBE_PORT", "8765"))
+HOST = os.environ.get("YAOZI_HOST", "127.0.0.1")
+PORT = int(os.environ.get("YAOZI_PORT", "8765"))
 
 
 def _resolve_tool(name: str) -> str:

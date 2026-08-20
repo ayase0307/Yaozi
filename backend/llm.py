@@ -18,7 +18,7 @@ from pathlib import Path
 
 from . import dictionary, storage
 
-MODEL = os.environ.get("VIDSCRIBE_FIX_MODEL", "sonnet")
+MODEL = os.environ.get("YAOZI_FIX_MODEL", "sonnet")
 BATCH_CHARS = 4000  # 每批的字元預算
 BATCH_LINES = 80
 TIMEOUT = 300

@@ -1,6 +1,6 @@
 /** 介面字型(不是字幕字型)。存 localStorage,純前端的事,不用經過後端。 */
 
-const KEY = "vidscribe:uifont";
+const KEY = "yaozi:uifont";
 
 /** 沒設定過就用俐方體11號——點陣字,11 的倍數(11/22/33px)最銳利。沒裝也不會壞,
  *  瀏覽器會自動掉到 --sans-fallback。 */

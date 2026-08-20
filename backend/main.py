@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import (
+    asr,
     burn,
     config,
     cuts,
@@ -50,7 +51,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="VidScribe", lifespan=lifespan)
+app = FastAPI(title="咬字", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # 擋 DNS rebinding:只接受本機 Host,其他一律拒絕
@@ -265,6 +266,16 @@ def get_style():
 @app.put("/api/style")
 def put_style(body: dict = Body(...)):
     return style.save(body)
+
+
+@app.get("/api/asr")
+def get_asr():
+    return asr.load()
+
+
+@app.put("/api/asr")
+def put_asr(body: dict = Body(...)):
+    return asr.save(body)
 
 
 @app.get("/api/llm/status")

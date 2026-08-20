@@ -1,10 +1,20 @@
 import json
+import re
 import subprocess
 import threading
 import traceback
 import uuid
 
-from . import config, storage
+from . import asr, config, storage
+
+# Whisper 訓練資料裡混進了大量字幕組水印,聽不到人聲時就會把這些整句吐出來。
+# 只列真人講話幾乎不可能講的字串,免得誤刪正常字幕。
+_HALLUCINATION = re.compile(
+    r"Amara\.org|字幕(志願|志愿)者|明鏡|明镜|點點欄目|点点栏目"
+    r"|不吝(點贊|点赞)|訂閱\s*轉發\s*打賞|订阅\s*转发\s*打赏"
+    r"|Subtitles by the|字幕by|MBC\s*뉴스",
+    re.IGNORECASE,
+)
 
 _model = None
 _model_device = None
@@ -80,7 +90,7 @@ def _get_model(status_cb):
                     )
                     _model_device = "cuda"
                 except Exception as e:
-                    print(f"[vidscribe] CUDA 初始化失敗,改用 CPU:{e}")
+                    print(f"[yaozi] CUDA 初始化失敗,改用 CPU:{e}")
                     _force_cpu = True
             if _model is None:
                 _model = WhisperModel(
@@ -102,16 +112,29 @@ def _transcribe(meta: dict, audio, duration: float) -> list[dict]:
     model, device = _get_model(lambda: _update(meta, status="loading_model"))
     _update(meta, status="transcribing", progress=0.0, device=device)
 
-    lang = None if config.LANGUAGE == "auto" else config.LANGUAGE
-    kwargs = dict(language=lang, word_timestamps=True, vad_filter=True)
+    opts = asr.load()
+    lang = None if opts["language"] == "auto" else opts["language"]
+    prompt = opts["prompt"]
     if lang == "zh":
-        kwargs["initial_prompt"] = "以下是繁體中文的內容。"
+        prompt = ("以下是繁體中文的內容。" + prompt).strip()
 
-    seg_iter, info = model.transcribe(str(audio), **kwargs)
+    seg_iter, info = model.transcribe(
+        str(audio),
+        language=lang,
+        word_timestamps=True,
+        initial_prompt=prompt or None,
+        vad_filter=opts["vad"],
+        vad_parameters={"threshold": opts["vad_threshold"], "min_silence_duration_ms": 500},
+        # 下面三個是幻覺防護。沒有它們,遇到純音樂/長靜音時 Whisper 會照著訓練資料
+        # 掰出「字幕由 Amara.org 社群提供」這類水印,而且會一路複製到下一段。
+        condition_on_previous_text=False,
+        hallucination_silence_threshold=2.0,
+        no_speech_threshold=0.6,
+    )
     segments = []
     for s in seg_iter:
         text = s.text.strip()
-        if not text:
+        if not text or _HALLUCINATION.search(text):
             continue
         segments.append({
             "id": uuid.uuid4().hex[:8],
@@ -172,7 +195,7 @@ def _run(pid: str) -> None:
                 if _model_device == "cuda":
                     # GPU 在辨識途中失敗(常見於 cuDNN 缺 DLL),換 CPU 重試一次
                     traceback.print_exc()
-                    print("[vidscribe] GPU 辨識失敗,改用 CPU 重試")
+                    print("[yaozi] GPU 辨識失敗,改用 CPU 重試")
                     _reset_model_to_cpu()
                     segments = _transcribe(meta, audio, duration)
                 else:

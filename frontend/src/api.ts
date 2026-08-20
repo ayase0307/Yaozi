@@ -1,4 +1,5 @@
 import type {
+  AsrSettings,
   BurnJob,
   DictEntry,
   FixJob,
@@ -90,6 +91,15 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(s),
     }).then((r) => json<SubtitleStyle>(r)),
+
+  getAsr: () => fetch("/api/asr").then((r) => json<AsrSettings>(r)),
+
+  saveAsr: (s: AsrSettings) =>
+    fetch("/api/asr", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(s),
+    }).then((r) => json<AsrSettings>(r)),
 
   getLlmStatus: () =>
     fetch("/api/llm/status").then((r) =>

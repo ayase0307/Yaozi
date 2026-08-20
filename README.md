@@ -1,4 +1,4 @@
-# VidScribe
+# 咬字 Yaozi
 
 **本機影片字幕工具**:拖影片進來 → GPU 語音辨識 → 鍵盤快速校對 → 匯出 SRT/逐字稿/燒錄成品影片。
 所有檔案與運算都在自己電腦上完成,不上傳雲端、不需要帳號。
@@ -76,12 +76,12 @@ git clone <本倉庫>
 
 | 變數 | 預設 | 說明 |
 |---|---|---|
-| `VIDSCRIBE_MODEL` | `large-v3` | Whisper 模型(低配機器可用 `medium`/`small`) |
-| `VIDSCRIBE_LANG` | `zh` | 固定中文;設 `auto` 自動偵測語言 |
-| `VIDSCRIBE_PORT` | `8765` | 服務埠 |
-| `VIDSCRIBE_DATA` | `./projects` | 專案資料存放位置 |
-| `VIDSCRIBE_MODELS` | `./models` | 模型存放位置 |
-| `VIDSCRIBE_FIX_MODEL` | `sonnet` | AI 校正使用的 Claude 模型 |
+| `YAOZI_MODEL` | `large-v3` | Whisper 模型(低配機器可用 `medium`/`small`) |
+| `YAOZI_LANG` | `auto` | 自動偵測語言;可鎖成 `zh`、`ja` 等固定語言 |
+| `YAOZI_PORT` | `8765` | 服務埠 |
+| `YAOZI_DATA` | `./projects` | 專案資料存放位置 |
+| `YAOZI_MODELS` | `./models` | 模型存放位置 |
+| `YAOZI_FIX_MODEL` | `sonnet` | AI 校正使用的 Claude 模型 |
 
 ## 開發
 

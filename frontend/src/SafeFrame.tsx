@@ -72,8 +72,15 @@ export interface VideoRect {
 }
 
 /** 影片實際畫面在版面上的位置與大小(自動扣掉上下/左右黑邊)。
- *  安全框與字幕預覽都疊在這塊區域上,兩者才會對得起來。 */
-export function useVideoRect(videoRef: React.RefObject<HTMLVideoElement>): VideoRect | null {
+ *  安全框與字幕預覽都疊在這塊區域上,兩者才會對得起來。
+ *
+ *  mounted:呼叫端如果比 <video> 早掛載(Editor 在載入中會先 return 別的畫面),
+ *  effect 第一次跑的時候 ref 還是 null 就直接放棄了,而 ref 變動不會觸發重跑,
+ *  rect 會永遠是 null。傳一個「影片已經掛上去了」的值進來讓 effect 重跑。 */
+export function useVideoRect(
+  videoRef: React.RefObject<HTMLVideoElement>,
+  mounted: unknown = true
+): VideoRect | null {
   const [rect, setRect] = useState<VideoRect | null>(null);
 
   useEffect(() => {
@@ -111,7 +118,7 @@ export function useVideoRect(videoRef: React.RefObject<HTMLVideoElement>): Video
       ro.disconnect();
       v.removeEventListener("loadedmetadata", update);
     };
-  }, [videoRef]);
+  }, [videoRef, mounted]);
 
   return rect;
 }

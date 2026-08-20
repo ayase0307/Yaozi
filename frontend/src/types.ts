@@ -60,6 +60,14 @@ export interface SubtitleStyle {
   max_chars: number;
 }
 
+/** 辨識設定(全域)。language 是 Whisper 語言代碼,"auto" 為自動偵測。 */
+export interface AsrSettings {
+  language: string;
+  prompt: string;
+  vad: boolean;
+  vad_threshold: number;
+}
+
 /** 依語系分好的字型清單,後端排好順序(中文在最前面)。 */
 export interface FontGroup {
   label: string;

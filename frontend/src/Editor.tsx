@@ -126,7 +126,8 @@ export default function Editor({ projectId }: { projectId: string }) {
   saveStateRef.current = saveState;
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  const videoRect = useVideoRect(videoRef);
+  // 影片要 status === "done" 才會出現在畫面上,rect 得等到那時候才算得出來
+  const videoRect = useVideoRect(videoRef, project?.status === "done");
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
   const loadedRef = useRef(false);
   const justLoadedRef = useRef<Segment[] | null>(null);
@@ -1114,7 +1115,7 @@ export default function Editor({ projectId }: { projectId: string }) {
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
               onLoadedMetadata={(e) => {
-                const stored = localStorage.getItem(`vidscribe:safeframe:${projectId}`);
+                const stored = localStorage.getItem(`yaozi:safeframe:${projectId}`);
                 setSafeFrame(
                   stored ??
                     matchPresetByRatio(
@@ -1150,7 +1151,7 @@ export default function Editor({ projectId }: { projectId: string }) {
               value={safeFrame}
               onChange={(e) => {
                 setSafeFrame(e.target.value);
-                localStorage.setItem(`vidscribe:safeframe:${projectId}`, e.target.value);
+                localStorage.setItem(`yaozi:safeframe:${projectId}`, e.target.value);
               }}
             >
               {SAFE_FRAMES.map((p) => (
