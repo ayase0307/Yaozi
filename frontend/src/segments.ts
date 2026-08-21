@@ -28,6 +28,42 @@ export function formatTimeMs(t: number): string {
 
 const round3 = (t: number) => Math.round(t * 1000) / 1000;
 
+// 全形字的 Unicode 區段(CJK、假名、韓文、全形標點),跟後端 transcriber._width() 同一套。
+// 直接抄 East_Asian_Width 的 W/F 主要區塊,不必為了幾個冷門字去搬整張表。
+const WIDE = new RegExp(
+  "[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF" +
+    "\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F" +
+    "\uFF00-\uFF60\uFFE0-\uFFE6]"
+);
+
+/** 字寬:全形算 2、半形算 1,空白不算。 */
+export function textWidth(s: string): number {
+  let w = 0;
+  for (const ch of s) {
+    if (/\s/.test(ch)) continue;
+    w += WIDE.test(ch) ? 2 : 1;
+  }
+  return w;
+}
+
+/**
+ * 閱讀速度,單位是「字寬/秒」。
+ * Netflix 的上限中文是 9 字/秒、英文 17 字元/秒——換成字寬剛好都是 ~18,
+ * 所以一個門檻兩種語言都適用,不必先判斷這句是什麼語言。
+ */
+export const SPEED_WARN = 18;
+export const SPEED_OVER = 24;
+
+export function readingSpeed(seg: Segment): number {
+  return textWidth(seg.text) / Math.max(seg.end - seg.start, 0.01);
+}
+
+/** "" / "warn"(偏快) / "over"(來不及看) */
+export function speedLevel(seg: Segment): "" | "warn" | "over" {
+  const v = readingSpeed(seg);
+  return v > SPEED_OVER ? "over" : v > SPEED_WARN ? "warn" : "";
+}
+
 /**
  * 在文字的 pos 位置把一句切成兩句。
  * 切點時間先按字數比例推估,再磁吸到 0.3 秒內最近的單字邊界。

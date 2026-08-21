@@ -113,8 +113,9 @@ export default function Home() {
           </div>
         )}
 
+        {/* 怪物手上那塊字幕板就是投放區。橫幅本來只是裝飾,佔掉一整個畫面
+            又什麼都不能做;把板子變成落點,同一塊空間就有了用處。 */}
         <section className="hero">
-          <Illustration name="banner" className="hero-bg" />
           <div className="hero-copy">
             <h1 className="hero-title">
               打字幕
@@ -122,33 +123,33 @@ export default function Home() {
               不該比剪片久
             </h1>
             <p className="hero-sub">
-              丟一支影片進來,自動聽打、鍵盤校對、匯出 SRT 或直接把字幕燒進成品。
+              自動聽打、鍵盤校對、匯出 SRT 或直接把字幕燒進成品。
               全程在這台電腦上跑,不上傳、不需要帳號。
             </p>
           </div>
-        </section>
-
-        <div
-          className={"dropzone" + (dragging ? " dragging" : "")}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            handleFiles(e.dataTransfer.files);
-          }}
-          onClick={() => fileInput.current?.click()}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") fileInput.current?.click();
-          }}
-        >
-          <div className="dropzone-title">把影片或音檔丟進來</div>
-          <div className="dropzone-sub">或點一下選擇檔案,放開就開始辨識</div>
+          {/* 投放區用「圖片百分比」定位,所以外面這層必須跟圖片一樣的比例,
+              不然換個視窗寬度板子就跑掉了 */}
+          <div className="hero-stage">
+            <Illustration name="banner" className="hero-bg" />
+            <button
+              type="button"
+              className={"hero-drop" + (dragging ? " dragging" : "")}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                handleFiles(e.dataTransfer.files);
+              }}
+              onClick={() => fileInput.current?.click()}
+            >
+              <span className="hero-drop-title">把影片或音檔丟進來</span>
+              <span className="hero-drop-sub">或點一下選擇檔案,放開就開始辨識</span>
+            </button>
+          </div>
           <input
             ref={fileInput}
             type="file"
@@ -160,7 +161,7 @@ export default function Home() {
               e.target.value = "";
             }}
           />
-        </div>
+        </section>
 
         {ytOk !== null && (
           <>

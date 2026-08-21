@@ -26,6 +26,7 @@
   --green-softer: #f2fbee;
   --green-ink: #0b2705;
   --danger: #e0403f;
+  --warn: #c9761a;
   /* --sans 會被 UiFont.tsx 覆寫成「使用者選的字型, var(--sans-fallback)」,
      所以字型堆疊只寫在 --sans-fallback 這一處 */
   --sans-fallback: "Segoe UI Variable Text", "Segoe UI", "Microsoft JhengHei UI",
@@ -209,6 +210,17 @@ button {
   background: var(--panel-2);
 }
 
+/* 開關型的 icon 按鈕(目前只有波形區收合),亮起來表示現在是開的 */
+.icon-btn.on {
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.icon-btn > svg {
+  display: block;
+  margin: auto;
+}
+
 /* ---- 工具列 ---- */
 
 .toolbar {
@@ -330,53 +342,114 @@ button {
 
 /* ---- 首頁主視覺 ---- */
 
-/* 整條橫幅:負邊距把 .home 的內距吃掉,圖直接貼到視窗兩側 */
+/* 整條橫幅:負邊距把 .home 的內距吃掉,圖直接貼到視窗兩側。
+   左半是標題、右半是怪物舉著的字幕板(= 檔案投放區)。 */
 .hero {
   position: relative;
-  margin: -36px calc(-1 * clamp(20px, 6vw, 72px)) 32px;
-  padding: clamp(36px, 6vw, 76px) clamp(20px, 6vw, 72px);
-  min-height: clamp(300px, 34vw, 460px);
+  margin: -36px calc(-1 * clamp(20px, 6vw, 72px)) 28px;
+  height: clamp(260px, 26vw, 380px);
   display: flex;
-  align-items: center;
+  align-items: stretch;
   overflow: hidden;
-  /* 沒放圖也不會開天窗 */
-  background: linear-gradient(100deg, var(--green-ink), #14400a 55%, #1d6b0c);
+  /* 平的,不能用漸層:圖片框左緣的遮罩是純 green-ink,
+     底色只要有漸層就會在接縫處露出一條色差 */
+  background: var(--green-ink);
   color: #f4fbf0;
 }
 
-.hero-bg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
+/* 圖片框。比例必須跟 banner.png 一模一樣,裡面才能用百分比對準板子 */
+.hero-stage {
+  position: relative;
+  flex: none;
   height: 100%;
-  object-fit: cover;
-  object-position: 70% center;
+  aspect-ratio: 1916 / 821;
 }
 
-/* 左深右透的遮罩,圖再花文字都讀得到 */
-.hero::before {
+.hero-bg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 圖的左緣化進深綠底,不然會有一條紙白色的接縫 */
+.hero-stage::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 1;
   background: linear-gradient(
     95deg,
-    rgba(7, 24, 3, 0.94) 0%,
-    rgba(7, 24, 3, 0.78) 34%,
-    rgba(7, 24, 3, 0.2) 68%,
-    rgba(7, 24, 3, 0) 100%
+    var(--green-ink) 0%,
+    rgba(11, 39, 5, 0.92) 12%,
+    rgba(11, 39, 5, 0.35) 26%,
+    rgba(11, 39, 5, 0) 34%
   );
 }
 
 .hero-copy {
   position: relative;
   z-index: 2;
-  max-width: 40ch;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 24px clamp(12px, 2vw, 28px) 24px clamp(20px, 6vw, 72px);
+}
+
+/* 字幕板的內面。座標是對著 banner.png 量出來的(左右兩端要讓開怪物的拳頭),
+   板子本身是斜的,所以這裡也跟著轉 5 度,不然會像貼上去的貼紙。 */
+.hero-drop {
+  position: absolute;
+  z-index: 2;
+  left: 40.6%;
+  top: 56.1%;
+  width: 45.5%;
+  height: 36.1%;
+  transform: rotate(-5deg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: none;
+  border-radius: 8px;
+  /* 半透明紙色:蓋掉底下的白條讓字讀得到,又還看得出這是那塊板子 */
+  background: rgba(244, 244, 241, 0.84);
+  color: var(--green-ink);
+  cursor: pointer;
+  text-align: center;
+  padding: 4px 12px;
+  transition: background 0.15s, box-shadow 0.2s var(--ease-out);
+}
+
+.hero-drop:hover,
+.hero-drop:focus-visible,
+.hero-drop.dragging {
+  outline: none;
+  background: rgba(213, 247, 203, 0.95);
+  box-shadow: 0 0 0 3px var(--green) inset;
+}
+
+.hero-drop.dragging {
+  background: rgba(56, 211, 33, 0.85);
+}
+
+.hero-drop-title {
+  font-size: clamp(15px, 1.5vw, 21px);
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.hero-drop-sub {
+  font-size: clamp(11px, 1vw, 13.5px);
+  line-height: 1.4;
+  color: #2c4a20;
 }
 
 .hero-title {
   margin: 0;
-  font-size: clamp(38px, 6.2vw, 76px);
+  font-size: clamp(30px, 4.4vw, 60px);
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.015em;
@@ -384,11 +457,10 @@ button {
 }
 
 .hero-sub {
-  margin: 16px 0 0;
-  max-width: 44ch;
+  margin: 14px 0 0;
   color: #cfe4c6;
-  font-size: 14.5px;
-  line-height: 1.75;
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 .empty-state {
@@ -922,33 +994,6 @@ button {
   text-align: right;
 }
 
-.dropzone {
-  border: 1.5px dashed var(--line-strong);
-  border-radius: 18px;
-  padding: 52px 24px;
-  text-align: center;
-  cursor: pointer;
-  background: var(--panel);
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.dropzone:hover,
-.dropzone.dragging {
-  border-color: var(--green);
-  background: var(--green-softer);
-}
-
-.dropzone-title {
-  font-size: 20px;
-  font-weight: 700;
-}
-
-.dropzone-sub {
-  color: var(--muted);
-  font-size: 13.5px;
-  margin-top: 6px;
-}
-
 .upload-list {
   margin-top: 20px;
   display: flex;
@@ -1290,12 +1335,15 @@ button {
   padding: 4px 6px 30vh;
 }
 
+/* 列高是這頁最珍貴的東西:一句多 20px,一個畫面就少看三句。
+   欄距要留(不然文字貼著時間碼),但列距(原文/譯文)壓到最小。 */
 .sub-row {
   display: grid;
-  grid-template-columns: 64px 1fr auto auto;
+  grid-template-columns: 52px 1fr auto auto;
   align-items: start;
-  gap: 10px;
-  padding: 7px 12px;
+  column-gap: 10px;
+  row-gap: 1px;
+  padding: 4px 12px;
   border-radius: 8px;
   cursor: pointer;
 }
@@ -1316,30 +1364,71 @@ button {
 
 .row-time {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--green-dark);
-  padding-top: 3px;
+  padding-top: 2px;
   text-align: right;
   white-space: nowrap;
 }
 
 .row-text {
   font-size: 15px;
-  line-height: 1.65;
+  line-height: 1.45;
   word-break: break-word;
 }
 
+/* 平常淡出,免得每一列都掛著一個沒人在看的數字;
+   閱讀速度超標的那幾列例外——那正是要一眼掃出來的東西 */
 .row-count {
   font-family: var(--mono);
   font-size: 11.5px;
   color: var(--muted);
-  padding-top: 4px;
+  padding-top: 3px;
   min-width: 20px;
   text-align: right;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.sub-row:hover .row-count,
+.sub-row.selected .row-count,
+.sub-row.active .row-count,
+.row-count.warn,
+.row-count.over {
+  opacity: 1;
 }
 
 .sub-row.active .row-count {
   color: var(--green-dark);
+}
+
+.row-count.warn,
+.sub-row.active .row-count.warn {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.row-count.over,
+.sub-row.active .row-count.over {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* 超標時在數字後面點一個點,不靠顏色也看得出來 */
+.row-count.warn::after,
+.row-count.over::after {
+  content: "•";
+  margin-left: 3px;
+}
+
+.stats-bar .speed.warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.stats-bar .speed.over {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 .row-delete {
@@ -1372,13 +1461,13 @@ button {
 .row-trans {
   grid-column: 2 / 3;
   width: 100%;
-  margin-top: -2px;
-  padding: 2px 6px;
+  padding: 0 6px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   font-family: var(--sans);
   font-size: 13.5px;
+  line-height: 1.45;
   color: var(--green-dark);
 }
 
@@ -1426,7 +1515,8 @@ button {
   width: 100%;
   font-family: var(--sans);
   font-size: 15px;
-  line-height: 1.65;
+  /* 必須跟 .row-text 一致,否則點進去編輯時整列會跳一下 */
+  line-height: 1.45;
   color: var(--text);
   background: #fff;
   border: 1px solid var(--green);
@@ -2298,6 +2388,25 @@ a.btn {
 /* ---- 響應式 ---- */
 
 @media (max-width: 900px) {
+  /* 橫幅擺不下並排了(圖是 2.33:1,一放進去標題就沒空間),改成上下疊 */
+  .hero {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .hero-stage {
+    width: 100%;
+    height: auto;
+  }
+
+  .hero-copy {
+    padding: 24px clamp(20px, 6vw, 72px);
+  }
+
+  .hero-stage::before {
+    display: none;
+  }
+
   .editor {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
@@ -2365,17 +2474,9 @@ a.btn {
   }
 }
 
-@keyframes hero-in {
+@keyframes hero-fade {
   from {
     opacity: 0;
-    transform: scale(1.1);
-  }
-}
-
-/* 橫幅極慢的推鏡,靜態畫面才不會死板 */
-@keyframes hero-drift {
-  to {
-    transform: scale(1.06) translateX(-1.5%);
   }
 }
 
@@ -2418,9 +2519,9 @@ a.btn {
   }
 }
 
+/* 推鏡拿掉了:板子現在是檔案投放區,圖一飄就跟投放區對不準。只留淡入。 */
 .hero-bg {
-  animation: hero-in 1.4s var(--ease-out) backwards,
-    hero-drift 26s ease-in-out 1.4s infinite alternate;
+  animation: hero-fade 1.2s var(--ease-out) backwards;
 }
 
 .hero-title {

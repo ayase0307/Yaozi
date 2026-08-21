@@ -14,6 +14,8 @@ import {
   formatTime,
   formatTimeMs,
   mergeSegments,
+  readingSpeed,
+  speedLevel,
   splitSegment,
   splitSegmentAtTime,
   uid,
@@ -67,6 +69,13 @@ const HOTKEYS: [string, string][] = [
 ];
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
+
+// 閱讀速度超標時字數會變色,滑過去說明是什麼意思
+const SPEED_HINT: Record<"" | "warn" | "over", string> = {
+  "": "",
+  warn: " · 偏快,觀眾可能來不及看完",
+  over: " · 太快了,這句要拉長或拆短",
+};
 
 const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
   claude: "Claude Code",
@@ -125,6 +134,10 @@ export default function Editor({ projectId }: { projectId: string }) {
 
   const [subStyle, setSubStyle] = useState<SubtitleStyle | null>(null);
   const [styleOpen, setStyleOpen] = useState(false);
+  // 波形區固定吃掉 245px,校對的時候根本不看它。收起來字幕列表就多七八句。
+  const [waveOpen, setWaveOpen] = useState(
+    () => localStorage.getItem("yaozi:wave-open") !== "0"
+  );
 
   const [resegmenting, setResegmenting] = useState(false);
   const [dictOpen, setDictOpen] = useState(false);
@@ -649,6 +662,13 @@ export default function Editor({ projectId }: { projectId: string }) {
     else v.pause();
   }, []);
 
+  const toggleWave = useCallback(() => {
+    setWaveOpen((v) => {
+      localStorage.setItem("yaozi:wave-open", v ? "0" : "1");
+      return !v;
+    });
+  }, []);
+
   const undo = useCallback(() => {
     setEditing(null);
     undoHistory();
@@ -1056,7 +1076,7 @@ export default function Editor({ projectId }: { projectId: string }) {
         onRename={rename}
       />
 
-      {peaks && project.duration ? (
+      {!waveOpen ? null : peaks && project.duration ? (
         <Waveform
           peaks={peaks}
           duration={project.duration}
@@ -1113,6 +1133,30 @@ export default function Editor({ projectId }: { projectId: string }) {
           onChange={setTrim}
           onSeek={seekTo}
         />
+        <span className="toolbar-sep" aria-hidden />
+        <button
+          className={"icon-btn" + (waveOpen ? " on" : "")}
+          onClick={toggleWave}
+          aria-pressed={waveOpen}
+          title={waveOpen ? "收起波形區,字幕列表變長" : "展開波形區"}
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
+            {[2, 5, 8, 11, 14].map((x, i) => {
+              const h = [5, 11, 8, 13, 6][i];
+              return (
+                <rect
+                  key={x}
+                  x={x - 0.9}
+                  y={(16 - h) / 2}
+                  width="1.8"
+                  height={h}
+                  rx="0.9"
+                  fill="currentColor"
+                />
+              );
+            })}
+          </svg>
+        </button>
         <span className="toolbar-sep" aria-hidden />
         <button className="icon-btn" onClick={undo} title="復原 (Ctrl+Z)">
           ↺
@@ -1308,12 +1352,9 @@ export default function Editor({ projectId }: { projectId: string }) {
               <span className="mono">{formatTimeMs(statSeg.start)}</span>
               <span>{(statSeg.end - statSeg.start).toFixed(2)} 秒</span>
               <span>{statSeg.text.replace(/\s/g, "").length} 字</span>
-              <span>
-                {(
-                  statSeg.text.replace(/\s/g, "").length /
-                  Math.max(statSeg.end - statSeg.start, 0.01)
-                ).toFixed(1)}{" "}
-                字/秒
+              <span className={"speed " + speedLevel(statSeg)}>
+                {readingSpeed(statSeg).toFixed(1)} 字寬/秒
+                {SPEED_HINT[speedLevel(statSeg)]}
               </span>
               {statIdx > 0 && (
                 <span>
@@ -1424,7 +1465,8 @@ export default function Editor({ projectId }: { projectId: string }) {
                 ) : (
                   <>
                     <a className="btn small primary" href={api.burnFileUrl(projectId)}>下載影片</a>
-                    <button className="btn small" onClick={() => setBurnJob(null)}>關閉</button>
+                    {/* 只清前端狀態的話,重整又會從後端撈回這張卡,一直賴在畫面右下角 */}
+                    <button className="btn small" onClick={cancelBurn}>關閉</button>
                   </>
                 )}
               </div>
@@ -1841,7 +1883,14 @@ const Row = memo(function Row({
       ) : (
         <span className="row-text">{seg.text}</span>
       )}
-      <span className="row-count">{seg.text.replace(/\s/g, "").length}</span>
+      <span
+        className={"row-count " + speedLevel(seg)}
+        title={`${seg.text.replace(/\s/g, "").length} 字 · ${readingSpeed(seg).toFixed(
+          1
+        )} 字寬/秒${SPEED_HINT[speedLevel(seg)]}`}
+      >
+        {seg.text.replace(/\s/g, "").length}
+      </span>
       <button
         className="row-delete"
         title="刪除這句字幕"
