@@ -103,27 +103,78 @@ def test_to_ass_bilingual_and_wrapping():
     assert exporter.to_srt_bi(seg).count("\n一二三四五六七八\nabcdefghij") == 1
 
 
+def _w(word, a, b):
+    return {"word": word, "start": a, "end": b}
+
+
 def test_split_long_sentences():
     from . import transcriber
-
-    def w(word, a, b):
-        return {"word": word, "start": a, "end": b}
 
     seg = {
         "id": "x", "start": 0.0, "end": 6.0,
         "text": "今天天氣真好,我們一起出去walk走走看看吧",
-        "words": [w("今天天氣真好,", 0, 1.5), w("我們一起出去", 1.5, 3.0),
-                  w("walk走走", 3.4, 4.5), w("看看吧", 4.5, 6.0)],
+        "words": [_w("今天天氣真好,", 0, 1.5), _w("我們一起出去", 1.5, 3.0),
+                  _w("walk走走", 3.4, 4.5), _w("看看吧", 4.5, 6.0)],
     }
-    out = transcriber._split_long([seg], 12)
+    out = transcriber.reflow([seg], 12)
     assert len(out) > 1, out
-    assert all(len(s["text"]) <= 14 for s in out), out  # 只能切在單字邊界,允許小幅超出
+    assert all(transcriber._width(s["text"]) <= 26 for s in out), out  # 只能切在單字邊界,允許小幅超出
     assert out[0]["text"].endswith(","), out[0]  # 有標點就優先斷在標點後
     assert out[0]["end"] == out[1]["start"], out  # 時間軸不能有洞
     assert "".join(s["text"] for s in out).replace(" ", "") == seg["text"].replace(" ", "")
     # 沒有單字時間戳就不能亂切,寧可留長句
     bare = {"id": "y", "start": 0, "end": 3, "text": "一" * 40, "words": []}
-    assert transcriber._split_long([bare], 12) == [bare]
+    assert transcriber.reflow([bare], 12) == [bare]
+
+
+def test_reflow_english_is_not_shredded():
+    from . import transcriber
+
+    # 英文一個「字」只有一兩個 byte,舊版照字元數算,24 字 = 四五個單字,
+    # 一句話會被剁成「and how much」這種看不懂的碎片
+    text = ("Which of them has the smartest model behind it, how good each one is at writing, "
+            "and how well it plugs into your other apps.")
+    words, t = [], 0.0
+    for tok in text.split(" "):
+        words.append(_w(" " + tok, round(t, 2), round(t + 0.3, 2)))
+        t += 0.32
+    seg = {"id": "x", "start": 0.0, "end": round(t, 2), "text": text, "words": words}
+    out = transcriber.reflow([seg], 24)
+    assert all(transcriber._width(s["text"]) <= 48 for s in out), out
+    assert all(len(s["text"].split()) >= 4 for s in out), out  # 不准再切出兩三個字的碎片
+    assert "".join(s["text"] for s in out).replace(" ", "") == text.replace(" ", "")
+
+
+def test_slow_lines_are_not_split_just_for_being_long():
+    from . import transcriber
+
+    # 唱歌拉長音:字數夠短就別動它。照秒數硬切只會切出「好きなものを」「持ちつつ」
+    slow = {"id": "x", "start": 41.0, "end": 51.95, "text": "好きなものを持ちつつ",
+            "words": [_w("好きなものを", 41.0, 48.6), _w("持ちつつ", 48.6, 51.95)]}
+    # Whisper 對著靜音吐出來的殘句,佔了 85 秒;不切,也不准把前一句黏上去
+    junk = {"id": "y", "start": 77.9, "end": 163.11, "text": "5つ",
+            "words": [_w("5つ", 77.9, 163.11)]}
+    prev = {"id": "z", "start": 63.08, "end": 77.9, "text": "生きなければと思った",
+            "words": [_w("生きなければと思った", 63.08, 77.9)]}
+    out = transcriber.reflow([slow, prev, junk], 24)
+    assert [s["text"] for s in out] == ["好きなものを持ちつつ", "生きなければと思った", "5つ"], out
+
+
+def test_merge_short_fragments():
+    from . import transcriber
+
+    def frag(text, a, b):
+        return {"id": text, "start": a, "end": b, "text": text,
+                "words": [_w(text, a, b)]}
+
+    out = transcriber.reflow(
+        [frag("痛みに負け", 0.0, 1.0), frag("好きなものを", 1.2, 2.2),  # 間隔小 → 併
+         frag("持ちつつ。", 2.3, 3.0), frag("できた君", 3.1, 4.0),      # 句號收尾 → 不併
+         frag("生きなければ", 9.0, 10.0)],                              # 間隔大 → 不併
+        20,
+    )
+    assert [s["text"] for s in out] == ["痛みに負け好きなものを持ちつつ。", "できた君", "生きなければ"], out
+    assert out[0]["start"] == 0.0 and out[0]["end"] == 3.0, out[0]
 
 
 if __name__ == "__main__":

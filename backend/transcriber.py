@@ -1,9 +1,12 @@
 import json
+import math
 import re
 import subprocess
 import threading
 import traceback
+import unicodedata
 import uuid
+from difflib import SequenceMatcher
 
 from . import asr, config, storage
 
@@ -151,58 +154,146 @@ def _transcribe(meta: dict, audio, duration: float) -> list[dict]:
         if len(segments) % 5 == 0:
             storage.save_project(meta)
     meta["language"] = info.language
-    return _split_long(segments, opts["split_chars"])
+    return reflow(segments, opts["split_chars"])
 
 
-# 斷句優先挑這些字後面;沒有標點時退而求其次找最長的停頓
-_BREAK_AFTER = "，。、；：？！,.;:?!」』）】"
+# 斷句優先挑這些字後面。句末標點比子句標點值錢,沒標點才退而求其次找最長的停頓。
+_SENT_END = "。？！?!…"
+_CLAUSE_END = "，、；：,;:」』）】"
+
+# 合併用的兩道閘。只管合併不管切開——字數夠短卻拖很久的句子(唱歌拉長音、
+# Whisper 對著靜音吐出來的「5つ」佔了 85 秒)硬切只會切出更看不懂的碎片,
+# 該修的是那句的結束時間,不是把它剁成兩半。
+MAX_DUR = 7.0  # 合併後最長幾秒:超過就不黏,免得整句黏到那種病態長段上
+MAX_GAP = 0.6  # 相鄰兩句間隔超過這麼久就當作換句,不合併
 
 
-def _split_long(segments: list[dict], limit: int) -> list[dict]:
-    """把過長的句子照單字時間戳切開。
+def _width(text: str) -> int:
+    """字寬:全形算 2、半形算 1。
 
-    Whisper 吐出來的一「段」常常是一整口氣講完的話,三、四十個字都有可能,
-    這種字幕根本讀不完。單純照字數硬切會切在詞中間,所以先找標點,
-    沒標點就找字與字之間最久的停頓(通常就是換氣的地方)。
+    「一句 24 字」對中文剛好一行,對英文卻只有四五個單字——同一個設定值要同時
+    管兩種語言,只能改用字寬。24 全形字 = 48 個英文字母,接近 Netflix 的每行 42。
+    """
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
+
+
+def _join(a: str, b: str) -> str:
+    """接兩段文字:兩邊都是半形才補空白,中文接中文不能有空隙。"""
+    sep = " " if a[-1:].isascii() and b[:1].isascii() else ""
+    return (a + sep + b).strip()
+
+
+def reflow(segments: list[dict], limit: int) -> list[dict]:
+    """重新斷句:先把碎片黏回完整句子,再把過長的句子切開。
+
+    Whisper 給的一「段」長短完全看它自己高興——安靜一點就斷成兩三個字的碎片
+    (「how」、「產む声を」),一口氣講完又能吐出兩百字。只切不合,碎片永遠是碎片;
+    只合不切,長句照樣讀不完。兩件事一起做才會得到「看得懂的一句」。
     """
     if limit <= 0:
         return segments
+    limit_w = limit * 2  # 設定值是全形字數,內部一律換算成字寬
+    return _split_long(_merge_short(segments, limit_w), limit_w)
+
+
+def _merge_short(segments: list[dict], limit_w: int) -> list[dict]:
+    """把接得上的相鄰句子黏成一句。
+
+    黏的條件:中間沒有明顯停頓、上一句沒有句號收尾、黏完長度與秒數都還在上限內。
+    句末標點是最強的訊號——那裡本來就是一句話的結尾,再怎麼靠近也不該併。
+    """
+    out: list[dict] = []
+    for seg in segments:
+        prev = out[-1] if out else None
+        if (
+            prev is not None
+            and seg["start"] - prev["end"] <= MAX_GAP
+            and prev["text"].rstrip()[-1:] not in _SENT_END
+            and _width(prev["text"]) + _width(seg["text"]) <= limit_w
+            and seg["end"] - prev["start"] <= MAX_DUR
+        ):
+            prev["end"] = seg["end"]
+            prev["text"] = _join(prev["text"], seg["text"])
+            prev["words"] = (prev.get("words") or []) + (seg.get("words") or [])
+            # 譯文沒有單字時間戳,切不開,但至少不能在合併時弄丟半句
+            if seg.get("trans"):
+                prev["trans"] = _join(prev.get("trans") or "", seg["trans"])
+            continue
+        out.append({**seg, "words": list(seg.get("words") or [])})
+    return out
+
+
+def _pos_map(src: str, dst: str) -> list[int]:
+    """src 的每個位置對應到 dst 的哪個位置(長度 len(src)+1)。
+
+    單字時間戳是 Whisper 的原始輸出,但 text 早就被簡繁轉換、詞庫、AI 校正改過
+    (「co-work」被詞庫換成「Claude」)。直接拿單字重組文字會把這些修正洗掉,
+    所以切點在單字文字裡算,再對映回真正的 text 上去切。
+    """
+    m = [0] * (len(src) + 1)
+    for tag, i1, i2, j1, j2 in SequenceMatcher(None, src, dst, autojunk=False).get_opcodes():
+        for k in range(i1, i2):
+            m[k] = j1 + (k - i1) if tag == "equal" else j1
+        m[i2] = j2
+    return m
+
+
+def _split_long(segments: list[dict], limit_w: int) -> list[dict]:
+    """把過長的句子照單字時間戳切開,盡量切成等長的幾段。
+
+    重點是「等長」:先算出這句至少得分成幾段(n),再瞄準 1/n 的位置下刀。
+    早期版本是從三成長度開始找分數最高的切點,英文字與字之間的停頓又細又雜,
+    結果每次都在很前面就切掉,一句 100 字被剁成八九個「and how much」這種碎片。
+    """
     out: list[dict] = []
     queue = list(segments)
     while queue:
         seg = queue.pop(0)
         words = seg.get("words") or []
+        text = seg["text"]
+        w = _width(text)
         # 沒有單字時間戳就切不準,寧可留著長句也不要時間軸錯位
-        if len(seg["text"]) <= limit or len(words) < 2:
+        if len(words) < 2 or w <= limit_w:
             out.append(seg)
             continue
-        best, best_score = None, -1.0
+        pos_map = _pos_map("".join(x["word"] for x in words), text)
+        n = max(math.ceil(w / limit_w), 2)
+        target = w / n
+        best, best_score = None, None
+        prefix = 0
         for i in range(1, len(words)):
-            left = "".join(w["word"] for w in words[:i])
-            # 兩邊都不能太短,否則會切出一兩個字的碎片
-            if not (limit * 0.3 <= len(left.strip()) <= limit):
+            prefix += len(words[i - 1]["word"])
+            pos = pos_map[prefix]
+            left = text[:pos].strip()
+            lw = _width(left)
+            # 上限是硬的(切完不能還超長),下限只是別切出太小的碎片
+            if lw > limit_w or lw < target * 0.55:
                 continue
-            gap = words[i]["start"] - words[i - 1]["end"]
-            score = gap + (1.0 if left.rstrip()[-1:] in _BREAK_AFTER else 0.0)
-            if score > best_score:
-                best, best_score = i, score
+            last = left[-1:]
+            score = (
+                -abs(lw - target) / target
+                + (1.2 if last in _SENT_END else 0.6 if last in _CLAUSE_END else 0.0)
+                + min(words[i]["start"] - words[i - 1]["end"], 0.5)
+            )
+            if best_score is None or score > best_score:
+                best, best_score = (i, pos), score
         if best is None:
             out.append(seg)
             continue
-        cut = round((words[best - 1]["end"] + words[best]["start"]) / 2, 3)
-        head = "".join(w["word"] for w in words[:best]).strip()
-        tail = "".join(w["word"] for w in words[best:]).strip()
+        i, pos = best
+        head, tail = text[:pos].strip(), text[pos:].strip()
         if not head or not tail:
             out.append(seg)
             continue
-        out.append({**seg, "end": cut, "text": head, "words": words[:best]})
+        cut = round((words[i - 1]["end"] + words[i]["start"]) / 2, 3)
+        out.append({**seg, "end": cut, "text": head, "words": words[:i]})
         # 尾巴放回佇列,還太長就繼續切
         queue.insert(0, {
             "id": uuid.uuid4().hex[:8],
             "start": cut,
             "end": seg["end"],
             "text": tail,
-            "words": words[best:],
+            "words": words[i:],
         })
     return out
 

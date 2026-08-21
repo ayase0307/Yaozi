@@ -126,6 +126,7 @@ export default function Editor({ projectId }: { projectId: string }) {
   const [subStyle, setSubStyle] = useState<SubtitleStyle | null>(null);
   const [styleOpen, setStyleOpen] = useState(false);
 
+  const [resegmenting, setResegmenting] = useState(false);
   const [dictOpen, setDictOpen] = useState(false);
   const [dictEntries, setDictEntries] = useState<DictEntry[]>([]);
   const [dictWrong, setDictWrong] = useState("");
@@ -987,6 +988,23 @@ export default function Editor({ projectId }: { projectId: string }) {
     setDictMsg(`已取代 ${count} 處(可 Ctrl+Z 復原)。`);
   };
 
+  // 用現在的斷句設定把整份字幕重排一次,不必重跑辨識(結果照常進復原堆疊)
+  const resegmentNow = () => {
+    if (resegmenting || !segmentsRef.current.length) return;
+    // 譯文沒有單字時間戳,跟著原文重排只能整段留在前一句,重排完得再翻一次
+    if (
+      segmentsRef.current.some((s) => s.trans) &&
+      !confirm("重新斷句會讓譯文對不上原文,之後要重新翻譯一次。要繼續嗎?")
+    )
+      return;
+    setResegmenting(true);
+    api
+      .resegment(segmentsRef.current)
+      .then((d) => setSegments(() => d.segments))
+      .catch((e) => setLoadError(String(e.message ?? e)))
+      .finally(() => setResegmenting(false));
+  };
+
   // 審閱清單清空後,順手清掉後端的工作狀態
   useEffect(() => {
     if (reviewItems === null && fixJob?.status === "done") {
@@ -1103,6 +1121,14 @@ export default function Editor({ projectId }: { projectId: string }) {
           ↻
         </button>
         <span className="toolbar-spacer" />
+        <button
+          className="btn small"
+          onClick={resegmentNow}
+          disabled={resegmenting || !segments.length}
+          title="照設定裡的每句字數重排全部字幕:碎片黏回完整句子、太長的切開(可 Ctrl+Z 復原)"
+        >
+          {resegmenting ? "重排中…" : "重新斷句"}
+        </button>
         <button className="btn small" onClick={openDict} title="管理錯字自動取代清單">
           詞庫
         </button>

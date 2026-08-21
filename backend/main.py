@@ -190,6 +190,24 @@ def put_subtitles(pid: str, body: dict = Body(...)):
     return {"ok": True}
 
 
+@app.post("/api/resegment")
+def resegment(body: dict = Body(...)):
+    """把一批字幕重新斷句(合併碎片 + 切開長句),不動存檔。
+
+    純轉換,前端拿回結果自己走復原系統存。這樣改斷句設定不必重跑一次辨識。
+    """
+    segments = body.get("segments")
+    if not isinstance(segments, list):
+        raise HTTPException(400, "segments 必須是陣列")
+    for s in segments:
+        if not (isinstance(s, dict) and "start" in s and "end" in s and "text" in s):
+            raise HTTPException(400, "字幕格式錯誤")
+    limit = body.get("split_chars")
+    if limit is None:
+        limit = asr.load()["split_chars"]
+    return {"segments": transcriber.reflow(segments, int(limit))}
+
+
 @app.post("/api/projects/{pid}/burn")
 def start_burn(pid: str):
     _get_project_or_404(pid)

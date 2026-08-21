@@ -68,6 +68,13 @@ export const api = {
       body: JSON.stringify({ segments, marks }),
     }).then((r) => json<{ ok: boolean }>(r)),
 
+  resegment: (segments: Segment[]) =>
+    fetch("/api/resegment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ segments }),
+    }).then((r) => json<{ segments: Segment[] }>(r)),
+
   getCuts: (id: string) =>
     fetch(`/api/projects/${id}/cuts`).then((r) =>
       json<{ status: string; cuts: number[]; error: string | null }>(r)
