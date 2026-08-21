@@ -5,6 +5,7 @@ import FontPicker from "./FontPicker";
 import StyleControls from "./StyleControls";
 import { applyUiSize, loadUiSize } from "./UiSize";
 import { loadUiFont, saveUiFont } from "./UiFont";
+import Hint from "./Hint";
 import type { AiProvider, AiStatus, AsrSettings, SubtitleStyle } from "./types";
 
 /** 設定頁。放的是「跨專案的全域設定」——介面長相、字幕外觀、環境檢查;
@@ -90,10 +91,10 @@ export default function Settings() {
                 <span className="style-unit">px</span>
               </span>
             </label>
-            <p className="style-hint">
+            <Hint>
               預設是俐方體11號(點陣字型),字級設成 11 的倍數——11、22——筆畫最銳利,
               其他大小會有點糊。不合胃口就換成系統預設。
-            </p>
+            </Hint>
           </div>
         </section>
 
@@ -109,6 +110,7 @@ export default function Settings() {
           <h2 className="settings-title">字幕外觀</h2>
           <p className="settings-sub">
             這是全域設定,所有專案共用,燒錄成品用的就是這一組。
+            編輯器工具列的「字幕外觀」改的是同一份,在那邊調可以一邊看影片。
           </p>
           {style ? (
             <StyleControls value={style} onChange={setStyle} />
@@ -242,10 +244,10 @@ function AsrControls({
           ))}
         </select>
       </label>
-      <p className="style-hint">
+      <Hint>
         鎖成單一語言會準一點,但丟進來的影片如果不是那個語言,Whisper 會硬把聽到的東西
         當成該語言,整段變成掰出來的句子。不確定就留自動偵測。
-      </p>
+      </Hint>
 
       <div className="style-row style-row-stack">
         <span className="style-label">提示詞</span>
@@ -257,10 +259,10 @@ function AsrControls({
           placeholder="人名、專有名詞、歌詞片段…例:防治所、結核病、卡介苗"
         />
       </div>
-      <p className="style-hint">
+      <Hint>
         先給模型看過的一段文字,難字會聽得比較準。跟詞庫的差別:提示詞影響「聽成什麼」,
         詞庫是聽完之後才做取代。
-      </p>
+      </Hint>
 
       <div className="style-row">
         <span className="style-label">靜音過濾</span>
@@ -288,10 +290,10 @@ function AsrControls({
           <span className="style-value mono">{value.vad_threshold.toFixed(2)}</span>
         </label>
       )}
-      <p className="style-hint">
+      <Hint>
         數字調低會抓到更多小聲、唱歌的段落(也更容易把雜訊當人聲);調高則相反。
         整支影片只辨識出零星幾句時,先把這個往下調。
-      </p>
+      </Hint>
 
       <label className="style-row">
         <span className="style-label">單句上限</span>
@@ -309,14 +311,62 @@ function AsrControls({
           <span className="style-unit">{value.split_chars ? "字" : ""}</span>
         </span>
       </label>
-      <p className="style-hint">
+      <SplitPreview limit={value.split_chars} />
+      <Hint>
         Whisper 給的一段長短完全看它自己高興:安靜一點就斷成兩三個字的碎片,
         一口氣講完又能吐出兩百字。這裡會把接得上的碎片黏回完整句子,再把過長的切開,
         優先斷在標點、其次斷在換氣的停頓。算的是中文字,英文一個字母算半個
         ——{value.split_chars || 0} 中文字 = {(value.split_chars || 0) * 2} 個英文字母。
         跟「每行字數」不一樣:那個只是把同一句折行,這個是真的切成兩句、各有自己的時間軸。
         改完在編輯器按「重新斷句」就能套到現有字幕,不用重跑辨識。
-      </p>
+      </Hint>
+    </div>
+  );
+}
+
+// 預覽用的樣本:前半段沒標點只有停頓,後半段有標點,兩種斷法一次看得到
+const SAMPLE =
+  "今天要跟大家介紹的是這台機器的操作流程首先把電源打開然後確認指示燈有沒有亮起來" +
+  "接著選擇你要的模式,如果不確定就先用預設值,最後按下開始就可以了";
+
+// 後端沒有單字時間戳就不敢切(切了時間軸會錯位),所以樣本要自己配一份:
+// 每個字平均攤在 18 秒裡,切點就純粹由標點跟長度決定。
+const SAMPLE_SEG = {
+  id: "preview",
+  start: 0,
+  end: 18,
+  text: SAMPLE,
+  words: [...SAMPLE].map((word, i) => ({
+    word,
+    start: Number(((i * 18) / SAMPLE.length).toFixed(3)),
+    end: Number((((i + 1) * 18) / SAMPLE.length).toFixed(3)),
+  })),
+};
+
+/** 「單句上限」改完的即時預覽。斷句邏輯只有後端那一份,所以直接打 /api/resegment
+ *  拿真的結果,不在前端另外實作一次(那種東西一定會跟後端走鐘)。 */
+function SplitPreview({ limit }: { limit: number }) {
+  const [lines, setLines] = useState<string[]>([]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      api
+        .resegment([SAMPLE_SEG], limit)
+        .then((r) => setLines(r.segments.map((s) => s.text)))
+        .catch(() => setLines([]));
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [limit]);
+
+  if (!lines.length) return null;
+  return (
+    <div className="split-preview">
+      <span className="split-preview-label">會切成這樣</span>
+      {lines.map((t, i) => (
+        <span key={i} className="split-preview-line">
+          {t}
+        </span>
+      ))}
     </div>
   );
 }

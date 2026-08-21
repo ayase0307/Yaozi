@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "selfcheck": "node src/segments.selfcheck.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

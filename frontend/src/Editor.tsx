@@ -16,6 +16,7 @@ import {
   mergeSegments,
   readingSpeed,
   speedLevel,
+  segmentProblem,
   splitSegment,
   splitSegmentAtTime,
   uid,
@@ -63,6 +64,9 @@ const HOTKEYS: [string, string][] = [
   ["空白鍵", "播放 / 暫停"],
   ["↑ ↓", "選句並跳到該時間"],
   ["B", "在播放位置切開字幕"],
+  ["N", "跳到下一個有問題的句子"],
+  ["Shift+點 / Shift+↑↓", "選取連續多句"],
+  ["Ctrl+M", "把選取的多句合併成一句"],
   ["Delete", "刪除選中的字幕"],
   ["雙擊波形", "新增 / 移除 Mark 點"],
   ["Ctrl+Z / Ctrl+Y", "復原 / 重做"],
@@ -118,7 +122,12 @@ export default function Editor({ projectId }: { projectId: string }) {
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const selectedIdxRef = useRef(selectedIdx);
   selectedIdxRef.current = selectedIdx;
+  // 多選的另一端。Shift+點或 Shift+↑↓ 時不動,selectedIdx 到 anchorIdx 之間就是選取範圍。
+  const [anchorIdx, setAnchorIdx] = useState(-1);
+  const anchorIdxRef = useRef(anchorIdx);
+  anchorIdxRef.current = anchorIdx;
   const [query, setQuery] = useState("");
+  const [replaceWith, setReplaceWith] = useState("");
 
   const [llmAvailable, setLlmAvailable] = useState(false);
   const [aiProvider, setAiProvider] = useState<AiProvider>("claude");
@@ -473,6 +482,13 @@ export default function Editor({ projectId }: { projectId: string }) {
 
   // ---- 編輯操作 ----
 
+  /** 選一句(並把多選範圍收成這一句)。除了 Shift 的路徑,其他地方都該走這個,
+   *  不然舊的 anchor 會留著,畫面上憑空多出一段反白。 */
+  const selectOnly = useCallback((i: number) => {
+    setSelectedIdx(i);
+    setAnchorIdx(i);
+  }, []);
+
   const commitText = useCallback(
     (id: string, draft: string) => {
       setSegments((prev) => {
@@ -531,9 +547,9 @@ export default function Editor({ projectId }: { projectId: string }) {
         return next;
       });
       setEditing({ id: pair[1].id, cursor: 0 });
-      setSelectedIdx(i + 1);
+      selectOnly(i + 1);
     },
-    [commitText, setSegments]
+    [commitText, setSegments, selectOnly]
   );
 
   const handleMergeUp = useCallback(
@@ -549,9 +565,9 @@ export default function Editor({ projectId }: { projectId: string }) {
         return next;
       });
       setEditing({ id: merged.id, cursor });
-      setSelectedIdx(i - 1);
+      selectOnly(i - 1);
     },
-    [setSegments]
+    [setSegments, selectOnly]
   );
 
   const handleTab = useCallback(
@@ -565,9 +581,9 @@ export default function Editor({ projectId }: { projectId: string }) {
         return;
       }
       setEditing({ id: prev[j].id, cursor: prev[j].text.length });
-      setSelectedIdx(j);
+      selectOnly(j);
     },
-    [commitText]
+    [commitText, selectOnly]
   );
 
   const seekTo = useCallback((t: number) => {
@@ -578,14 +594,34 @@ export default function Editor({ projectId }: { projectId: string }) {
   }, []);
 
   const handleRowClick = useCallback(
-    (index: number) => {
+    (index: number, extend: boolean) => {
       const s = segmentsRef.current[index];
       if (!s) return;
       setSelectedIdx(index);
+      // Shift 點是在圈範圍,不該把影片跳走,也不該把起點洗掉
+      if (extend) return;
+      setAnchorIdx(index);
       if (editingRef.current?.id !== s.id) seekTo(s.start);
     },
     [seekTo]
   );
+
+  /** 把選取範圍併成一句。重新斷句之後人工微調時,一次一句太慢。 */
+  const mergeSelected = useCallback(() => {
+    const lo = Math.min(anchorIdxRef.current, selectedIdxRef.current);
+    const hi = Math.max(anchorIdxRef.current, selectedIdxRef.current);
+    const prev = segmentsRef.current;
+    if (lo < 0 || hi <= lo || hi >= prev.length) return;
+    const merged = prev.slice(lo, hi + 1).reduce((a, b) => mergeSegments(a, b));
+    setSegments(() => {
+      const next = [...prev];
+      next.splice(lo, hi - lo + 1, merged);
+      return next;
+    });
+    setSelectedIdx(lo);
+    setAnchorIdx(lo);
+    setEditing(null);
+  }, [setSegments]);
 
   const handleStartEdit = useCallback((id: string, cursor: number) => {
     setEditing({ id, cursor });
@@ -602,9 +638,9 @@ export default function Editor({ projectId }: { projectId: string }) {
       next[i] = { ...next[i], start: round3(start), end: round3(end) };
       next.sort((a, b) => a.start - b.start || a.end - b.end);
       setSegments(() => next);
-      setSelectedIdx(next.findIndex((s) => s.id === id));
+      selectOnly(next.findIndex((s) => s.id === id));
     },
-    [setSegments]
+    [setSegments, selectOnly]
   );
 
   // 波形區:空白處拖選新增字幕
@@ -619,10 +655,10 @@ export default function Editor({ projectId }: { projectId: string }) {
         next.splice(i, 0, seg);
         return next;
       });
-      setSelectedIdx(i);
+      selectOnly(i);
       setEditing({ id: seg.id, cursor: 0 });
     },
-    [setSegments]
+    [setSegments, selectOnly]
   );
 
   const addMark = useCallback((t: number) => {
@@ -649,10 +685,10 @@ export default function Editor({ projectId }: { projectId: string }) {
         next.splice(idx, 1);
         return next;
       });
-      setSelectedIdx(-1);
+      selectOnly(-1);
       setEditing(null);
     },
-    [setSegments]
+    [setSegments, selectOnly]
   );
 
   const togglePlay = useCallback(() => {
@@ -668,6 +704,31 @@ export default function Editor({ projectId }: { projectId: string }) {
       return !v;
     });
   }, []);
+
+  // 每句有沒有毛病(太快/太長/空白/跟前句重疊)。算一次,列表、狀態列、跳轉共用。
+  const problems = useMemo(
+    () => segments.map((_, i) => segmentProblem(segments, i)),
+    [segments]
+  );
+  const problemCount = useMemo(() => problems.filter(Boolean).length, [problems]);
+  const problemsRef = useRef(problems);
+  problemsRef.current = problems;
+
+  /** 跳到下一個有問題的句子(會繞回開頭)。校對變成解清單,不用逐句巡。 */
+  const gotoNextProblem = useCallback(() => {
+    const list = segmentsRef.current;
+    const probs = problemsRef.current;
+    if (!list.length) return;
+    const from = selectedIdxRef.current;
+    for (let k = 1; k <= list.length; k++) {
+      const i = (from + k + list.length) % list.length;
+      if (!probs[i]) continue;
+      selectOnly(i);
+      seekTo(list[i].start);
+      rowRefs.current[i]?.scrollIntoView({ block: "center" });
+      return;
+    }
+  }, [selectOnly, seekTo]);
 
   const undo = useCallback(() => {
     setEditing(null);
@@ -696,6 +757,16 @@ export default function Editor({ projectId }: { projectId: string }) {
         redo();
         return;
       }
+      if (ctrl && key === "m") {
+        e.preventDefault();
+        mergeSelected();
+        return;
+      }
+      if (key === "n" && !ctrl) {
+        e.preventDefault();
+        gotoNextProblem();
+        return;
+      }
       if (e.key === " ") {
         e.preventDefault();
         togglePlay();
@@ -714,7 +785,7 @@ export default function Editor({ projectId }: { projectId: string }) {
               next.splice(i, 1, ...pair);
               return next;
             });
-            setSelectedIdx(i + 1);
+            selectOnly(i + 1);
           }
         }
         return;
@@ -751,8 +822,12 @@ export default function Editor({ projectId }: { projectId: string }) {
           e.key === "ArrowDown"
             ? Math.min(cur < 0 ? 0 : cur + 1, list.length - 1)
             : Math.max(cur < 0 ? 0 : cur - 1, 0);
-        setSelectedIdx(next);
-        seekTo(list[next].start);
+        if (e.shiftKey) {
+          setSelectedIdx(next); // 延伸選取:anchor 不動,也不跳影片
+        } else {
+          selectOnly(next);
+          seekTo(list[next].start);
+        }
         rowRefs.current[next]?.scrollIntoView({ block: "nearest" });
         return;
       }
@@ -767,7 +842,18 @@ export default function Editor({ projectId }: { projectId: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, seekTo, togglePlay, setSegments, deleteSegment, projectId]);
+  }, [
+    undo,
+    redo,
+    seekTo,
+    togglePlay,
+    setSegments,
+    deleteSegment,
+    projectId,
+    selectOnly,
+    mergeSelected,
+    gotoNextProblem,
+  ]);
 
   const activeIdx = useMemo(() => activeIndexAt(segments, currentTime), [segments, currentTime]);
 
@@ -781,16 +867,45 @@ export default function Editor({ projectId }: { projectId: string }) {
     });
   }, [activeIdx, isPlaying, editing, query]);
 
-  // 搜尋過濾(保留原始索引,操作照常)
+  // 搜尋過濾(保留原始索引,操作照常)。譯名要統一時得搜得到譯文那一行。
   const rows = useMemo(() => {
     const all = segments.map((seg, idx) => ({ seg, idx }));
-    if (!query.trim()) return all;
-    return all.filter((r) => r.seg.text.includes(query.trim()));
+    const q = query.trim();
+    if (!q) return all;
+    return all.filter((r) => r.seg.text.includes(q) || (r.seg.trans ?? "").includes(q));
   }, [segments, query]);
+
+  /** 全部取代。統一譯名、掃固定錯字是校對最常做的事,一句一句改太慢。 */
+  const replaceAll = () => {
+    const q = query.trim();
+    if (!q) return;
+    const prev = segmentsRef.current;
+    let count = 0;
+    const next = prev.map((s) => {
+      const parts = s.text.split(q);
+      const tParts = s.trans === undefined ? null : s.trans.split(q);
+      const hits = parts.length - 1 + (tParts ? tParts.length - 1 : 0);
+      if (!hits) return s;
+      count += hits;
+      return {
+        ...s,
+        text: parts.join(replaceWith),
+        trans: tParts ? tParts.join(replaceWith) : s.trans,
+      };
+    });
+    if (!count) {
+      alert(`找不到「${q}」。`);
+      return;
+    }
+    if (!confirm(`把 ${count} 處「${q}」換成「${replaceWith}」?可以 Ctrl+Z 復原。`)) return;
+    setSegments(() => next);
+  };
 
   // 資訊列:選中句優先,沒有就用播放中那句
   const statIdx = selectedIdx >= 0 ? selectedIdx : activeIdx;
   const statSeg = statIdx >= 0 ? segments[statIdx] : null;
+  const selCount =
+    anchorIdx >= 0 && selectedIdx >= 0 ? Math.abs(selectedIdx - anchorIdx) + 1 : 0;
 
   const retranscribe = () => {
     if (
@@ -907,12 +1022,12 @@ export default function Editor({ projectId }: { projectId: string }) {
     (s: FixSuggestion) => {
       const i = segmentsRef.current.findIndex((x) => x.id === s.id);
       if (i >= 0) {
-        setSelectedIdx(i);
+        selectOnly(i);
         seekTo(segmentsRef.current[i].start);
         rowRefs.current[i]?.scrollIntoView({ block: "center" });
       }
     },
-    [seekTo]
+    [seekTo, selectOnly]
   );
 
   // ---- 成品影片匯出 ----
@@ -1092,7 +1207,7 @@ export default function Editor({ projectId }: { projectId: string }) {
           onAddMark={addMark}
           onRemoveMark={removeMark}
           onSeek={seekTo}
-          onSelect={setSelectedIdx}
+          onSelect={selectOnly}
           onCommitTimes={handleCommitTimes}
           onCreate={handleCreate}
           trim={project.trim}
@@ -1165,23 +1280,15 @@ export default function Editor({ projectId }: { projectId: string }) {
           ↻
         </button>
         <span className="toolbar-spacer" />
+        {/* 左邊這組會一次改動全部字幕(所以標成 batch,按下去前要想一下);
+            右邊那組只是開面板,按錯了關掉就好。 */}
         <button
-          className="btn small"
+          className="btn small batch"
           onClick={resegmentNow}
           disabled={resegmenting || !segments.length}
           title="照設定裡的每句字數重排全部字幕:碎片黏回完整句子、太長的切開(可 Ctrl+Z 復原)"
         >
           {resegmenting ? "重排中…" : "重新斷句"}
-        </button>
-        <button className="btn small" onClick={openDict} title="管理錯字自動取代清單">
-          詞庫
-        </button>
-        <button
-          className="btn small"
-          onClick={() => setStyleOpen((v) => !v)}
-          title="字型、字級、顏色——影片上即時預覽,燒錄成品用同一組設定"
-        >
-          字幕外觀
         </button>
         {llmAvailable &&
           languages.length > 0 &&
@@ -1220,6 +1327,18 @@ export default function Editor({ projectId }: { projectId: string }) {
               AI 校正
             </button>
           ))}
+        <span className="toolbar-sep" aria-hidden />
+        <button className="btn small" onClick={openDict} title="管理錯字自動取代清單">
+          詞庫
+        </button>
+        <button
+          className={"btn small" + (styleOpen ? " on" : "")}
+          onClick={() => setStyleOpen((v) => !v)}
+          aria-pressed={styleOpen}
+          title="字型、字級、顏色——影片上即時預覽,燒錄成品用同一組設定"
+        >
+          字幕外觀
+        </button>
         <details className="hotkey-menu">
           <summary className="btn small">快捷鍵</summary>
           <div className="hotkey-panel">
@@ -1233,7 +1352,8 @@ export default function Editor({ projectId }: { projectId: string }) {
         </details>
       </div>
 
-      <main className="editor">
+      {/* 面板一開就把 .editor 縮窄,面板才不會蓋在字幕上——調外觀正是最需要一邊看字幕的時候 */}
+      <main className={"editor" + (styleOpen || dictOpen || reviewItems ? " docked" : "")}>
         <section className="player-pane">
           <div className={"video-wrap" + (project.has_video === false ? " audio-only" : "")}>
             <video
@@ -1307,10 +1427,32 @@ export default function Editor({ projectId }: { projectId: string }) {
               aria-label="搜尋字幕"
             />
             {query && (
-              <button className="link-btn" onClick={() => setQuery("")}>
-                清除
-              </button>
+              <>
+                <span className="search-hits">{rows.length}</span>
+                <input
+                  className="replace-input"
+                  value={replaceWith}
+                  onChange={(e) => setReplaceWith(e.target.value)}
+                  placeholder="換成…"
+                  aria-label="取代成"
+                />
+                <button className="btn small" onClick={replaceAll}>
+                  全部取代
+                </button>
+                <button className="link-btn" onClick={() => setQuery("")}>
+                  清除
+                </button>
+              </>
             )}
+            <span className="toolbar-spacer" />
+            <button
+              className="btn small"
+              onClick={gotoNextProblem}
+              disabled={!problemCount}
+              title="跳到下一句太快 / 太長 / 空白 / 跟前句重疊的字幕 (N)"
+            >
+              {problemCount ? `下一個問題 ${problemCount}` : "沒有問題句"}
+            </button>
           </div>
 
           <div className="sub-list">
@@ -1329,8 +1471,14 @@ export default function Editor({ projectId }: { projectId: string }) {
                   key={seg.id}
                   seg={seg}
                   index={idx}
+                  problem={problems[idx]}
                   isActive={idx === activeIdx}
                   isSelected={idx === selectedIdx}
+                  inRange={
+                    idx >= Math.min(anchorIdx, selectedIdx) &&
+                    idx <= Math.max(anchorIdx, selectedIdx) &&
+                    anchorIdx !== selectedIdx
+                  }
                   editingCursor={editing?.id === seg.id ? editing.cursor : null}
                   rowRef={(el) => (rowRefs.current[idx] = el)}
                   onRowClick={handleRowClick}
@@ -1347,21 +1495,36 @@ export default function Editor({ projectId }: { projectId: string }) {
             )}
           </div>
 
-          {statSeg && (
+          {selCount > 1 ? (
             <div className="stats-bar">
-              <span className="mono">{formatTimeMs(statSeg.start)}</span>
-              <span>{(statSeg.end - statSeg.start).toFixed(2)} 秒</span>
-              <span>{statSeg.text.replace(/\s/g, "").length} 字</span>
-              <span className={"speed " + speedLevel(statSeg)}>
-                {readingSpeed(statSeg).toFixed(1)} 字寬/秒
-                {SPEED_HINT[speedLevel(statSeg)]}
-              </span>
-              {statIdx > 0 && (
-                <span>
-                  與前句間隔 {(statSeg.start - segments[statIdx - 1].end).toFixed(2)} 秒
-                </span>
-              )}
+              <span>選了 {selCount} 句</span>
+              <button className="btn small primary" onClick={mergeSelected}>
+                合併成一句 (Ctrl+M)
+              </button>
+              <button className="btn small" onClick={() => selectOnly(selectedIdx)}>
+                取消選取
+              </button>
             </div>
+          ) : (
+            statSeg && (
+              <div className="stats-bar">
+                {/* 開始/結束/秒數本來波形頁腳也印一份,那邊已經拿掉了 */}
+                <span className="mono">
+                  {formatTimeMs(statSeg.start)} → {formatTimeMs(statSeg.end)}
+                </span>
+                <span>{(statSeg.end - statSeg.start).toFixed(2)} 秒</span>
+                <span>{statSeg.text.replace(/\s/g, "").length} 字</span>
+                <span className={"speed " + speedLevel(statSeg)}>
+                  {readingSpeed(statSeg).toFixed(1)} 字寬/秒
+                  {SPEED_HINT[speedLevel(statSeg)]}
+                </span>
+                {statIdx > 0 && (
+                  <span>
+                    與前句間隔 {(statSeg.start - segments[statIdx - 1].end).toFixed(2)} 秒
+                  </span>
+                )}
+              </div>
+            )
           )}
         </section>
       </main>
@@ -1822,11 +1985,13 @@ function EditorTopbar({
 interface RowProps {
   seg: Segment;
   index: number;
+  problem: string;
   isActive: boolean;
   isSelected: boolean;
+  inRange: boolean;
   editingCursor: number | null;
   rowRef: (el: HTMLDivElement | null) => void;
-  onRowClick: (index: number) => void;
+  onRowClick: (index: number, extend: boolean) => void;
   onStartEdit: (id: string, cursor: number) => void;
   onBlurCommit: (id: string, draft: string) => void;
   onEsc: (id: string, draft: string) => void;
@@ -1840,8 +2005,10 @@ interface RowProps {
 const Row = memo(function Row({
   seg,
   index,
+  problem,
   isActive,
   isSelected,
+  inRange,
   editingCursor,
   rowRef,
   onRowClick,
@@ -1855,12 +2022,15 @@ const Row = memo(function Row({
   onTransCommit,
 }: RowProps) {
   const cls =
-    "sub-row" + (isActive ? " active" : "") + (isSelected ? " selected" : "");
+    "sub-row" +
+    (isActive ? " active" : "") +
+    (isSelected ? " selected" : "") +
+    (inRange ? " ranged" : "");
   return (
     <div
       ref={rowRef}
       className={cls}
-      onClick={() => onRowClick(index)}
+      onClick={(e) => onRowClick(index, e.shiftKey)}
       onDoubleClick={() => onStartEdit(seg.id, seg.text.length)}
     >
       <span
@@ -1884,10 +2054,10 @@ const Row = memo(function Row({
         <span className="row-text">{seg.text}</span>
       )}
       <span
-        className={"row-count " + speedLevel(seg)}
+        className={"row-count " + speedLevel(seg) + (problem ? " flagged" : "")}
         title={`${seg.text.replace(/\s/g, "").length} 字 · ${readingSpeed(seg).toFixed(
           1
-        )} 字寬/秒${SPEED_HINT[speedLevel(seg)]}`}
+        )} 字寬/秒${problem ? " · " + problem : ""}`}
       >
         {seg.text.replace(/\s/g, "").length}
       </span>

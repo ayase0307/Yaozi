@@ -4,14 +4,12 @@ import Brand from "./Brand";
 import { RUNNING_STATUSES, statusLabel, type Project } from "./types";
 import { formatTime } from "./segments";
 
-/** 裝飾用插圖。圖檔放 frontend/public/art/<name>.png(不能放 assets,那是 Vite 打包的目錄),
- *  還沒放的話整個元素自己消失,版面照常,不會留破圖。 */
-function Illustration({ name, className }: { name: string; className: string }) {
+/** 載不到就自己消失的圖。插圖檔放 frontend/public/art/(不能放 assets,那是 Vite 打包的目錄);
+ *  專案縮圖也走這裡——純音檔的 /thumb 會回 404,消失剛好就是要的行為。 */
+function Img({ src, className }: { src: string; className: string }) {
   const [ok, setOk] = useState(true);
   if (!ok) return null;
-  return (
-    <img className={className} src={`/art/${name}.png`} alt="" onError={() => setOk(false)} />
-  );
+  return <img className={className} src={src} alt="" loading="lazy" onError={() => setOk(false)} />;
 }
 
 interface Upload {
@@ -130,7 +128,7 @@ export default function Home() {
           {/* 投放區用「圖片百分比」定位,所以外面這層必須跟圖片一樣的比例,
               不然換個視窗寬度板子就跑掉了 */}
           <div className="hero-stage">
-            <Illustration name="banner" className="hero-bg" />
+            <Img src="/art/banner.png" className="hero-bg" />
             <button
               type="button"
               className={"hero-drop" + (dragging ? " dragging" : "")}
@@ -149,6 +147,8 @@ export default function Home() {
               <span className="hero-drop-title">把影片或音檔丟進來</span>
               <span className="hero-drop-sub">或點一下選擇檔案,放開就開始辨識</span>
             </button>
+            {/* 同一張圖疊在投放區上面,只露出兩隻拳頭 —— 板子就藏到手的後面去了 */}
+            <Img src="/art/banner.png" className="hero-fg" />
           </div>
           <input
             ref={fileInput}
@@ -226,7 +226,7 @@ export default function Home() {
           <p className="empty-hint">載入中…</p>
         ) : projects.length === 0 && uploads.length === 0 ? (
           <div className="empty-state">
-            <Illustration name="empty" className="empty-art" />
+            <Img src="/art/empty.png" className="empty-art" />
             <p className="empty-hint">還沒有專案。丟一支影片進來,一兩分鐘後就有逐字稿。</p>
           </div>
         ) : (
@@ -235,11 +235,16 @@ export default function Home() {
               const running = RUNNING_STATUSES.includes(p.status);
               return (
                 <a key={p.id} className="project-card" href={`#/p/${p.id}`}>
+                  {/* 還在跑的專案不去要縮圖:媒體檔可能還在寫,而且抽一張圖要搶 ffmpeg */}
+                  {!running && (
+                    <Img src={`/api/projects/${p.id}/thumb`} className="card-thumb" />
+                  )}
                   <div className="project-name">{p.name}</div>
                   <div className="project-meta">
                     <span className="mono">
                       {p.duration ? formatTime(p.duration) : "--:--"}
                     </span>
+                    {p.seg_count ? <span className="mono">{p.seg_count} 句</span> : null}
                     <span>{new Date(p.created_at * 1000).toLocaleDateString("zh-TW")}</span>
                   </div>
                   <div className="project-status">
@@ -284,7 +289,7 @@ export default function Home() {
               <span>檔案留在硬碟裡</span>
             </div>
           </div>
-          <Illustration name="offline" className="mascot-art" />
+          <Img src="/art/offline.png" className="mascot-art" />
         </section>
       </main>
     </div>

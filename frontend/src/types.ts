@@ -34,6 +34,7 @@ export interface Project {
   duration: number | null;
   language: string | null;
   has_video: boolean | null;
+  seg_count?: number;
   model: string;
   device: string | null;
   /** 剪輯範圍(秒)。null = 整支影片。燒錄與匯出字幕都只出這一段。 */

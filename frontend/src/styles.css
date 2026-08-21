@@ -173,6 +173,19 @@ button {
   font-size: 13px;
 }
 
+/* 會動到整份字幕的按鈕(重新斷句/翻譯/AI 校正)。左邊一條綠槓,
+   跟旁邊只開面板的按鈕分開,免得手滑把整份重跑掉。 */
+.btn.small.batch {
+  border-left: 3px solid var(--green);
+}
+
+/* 開關型按鈕(字幕外觀/詞庫),亮起來表示面板現在是開的 */
+.btn.small.on {
+  background: var(--green-soft);
+  border-color: var(--green);
+  color: var(--green-dark);
+}
+
 .btn.primary {
   background: var(--green);
   border-color: var(--green);
@@ -397,29 +410,34 @@ button {
   padding: 24px clamp(12px, 2vw, 28px) 24px clamp(20px, 6vw, 72px);
 }
 
-/* 字幕板的內面。座標是對著 banner.png 量出來的(左右兩端要讓開怪物的拳頭),
-   板子本身是斜的,所以這裡也跟著轉 5 度,不然會像貼上去的貼紙。 */
+/* 字幕板的面板。座標是用 PIL 量 banner.png 的三條白線量出來的:
+   白線區 x 840~1645、y(左端) 509~764,每往右 100px 上升 10px ── 也就是板子傾斜 5.7 度。
+   面板刻意往左右各多伸出去一段(x 710~1800)壓進拳頭底下,再靠 .hero-fg 把拳頭蓋回來,
+   看起來就是板子延伸到手的後面,而不是貼在圖上的一張貼紙。 */
 .hero-drop {
   position: absolute;
   z-index: 2;
-  left: 40.6%;
-  top: 56.1%;
-  width: 45.5%;
-  height: 36.1%;
-  transform: rotate(-5deg);
+  left: 36.92%;
+  top: 57.07%;
+  width: 57.17%;
+  height: 30.94%;
+  transform: rotate(-5.71deg);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
   border: none;
-  border-radius: 8px;
-  /* 半透明紙色:蓋掉底下的白條讓字讀得到,又還看得出這是那塊板子 */
-  background: rgba(244, 244, 241, 0.84);
+  border-radius: 6px;
+  /* 幾乎不透明:底下的三條白線中間是深色間隙,透太多字會落在斑馬紋上讀不到 */
+  background: rgba(240, 243, 232, 0.93);
+  /* 內陰影 = 凹進框裡,不是浮在上面 */
+  box-shadow: inset 0 3px 14px rgba(11, 39, 5, 0.3);
   color: var(--green-ink);
   cursor: pointer;
   text-align: center;
-  padding: 4px 12px;
+  /* 左右 13% 是被拳頭蓋住的部分,文字不能寫進去 */
+  padding: 4px 13%;
   transition: background 0.15s, box-shadow 0.2s var(--ease-out);
 }
 
@@ -427,12 +445,40 @@ button {
 .hero-drop:focus-visible,
 .hero-drop.dragging {
   outline: none;
-  background: rgba(213, 247, 203, 0.95);
-  box-shadow: 0 0 0 3px var(--green) inset;
+  background: rgba(213, 247, 203, 0.92);
+  box-shadow: inset 0 3px 14px rgba(11, 39, 5, 0.3), inset 0 0 0 3px var(--green);
 }
 
 .hero-drop.dragging {
   background: rgba(56, 211, 33, 0.85);
+}
+
+/* 同一張圖再疊一次,只留兩隻拳頭那兩條直欄(34~44% 與 86~96%),
+   蓋在面板上面 → 面板看起來被手握住。中間留空才看得到面板,
+   左邊 34% 以前也要留空,不然會把 .hero-stage::before 的漸層遮罩蓋掉。 */
+.hero-fg {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0 34%,
+    #000 34% 43.84%,
+    transparent 43.84% 85.86%,
+    #000 85.86% 96%,
+    transparent 96% 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0 34%,
+    #000 34% 43.84%,
+    transparent 43.84% 85.86%,
+    #000 85.86% 96%,
+    transparent 96% 100%
+  );
 }
 
 .hero-drop-title {
@@ -1091,6 +1137,18 @@ button {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
+/* 影片第一眼比檔名好認。純音檔的 /thumb 回 404,<Img> 會整個消失,
+   卡片就退回原本沒有圖的樣子——所以不必留位子給它。 */
+.card-thumb {
+  display: block;
+  width: calc(100% + 36px);
+  margin: -16px -18px 12px;
+  height: 108px;
+  object-fit: cover;
+  border-radius: 13px 13px 0 0;
+  background: var(--panel-2);
+}
+
 .project-name {
   font-weight: 650;
   margin-bottom: 8px;
@@ -1148,7 +1206,8 @@ button {
   height: 26px;
   border: none;
   border-radius: 8px;
-  background: transparent;
+  /* 不能透明:壓在縮圖上的話灰色的 ✕ 會看不見 */
+  background: var(--panel);
   color: var(--muted);
   cursor: pointer;
   opacity: 0;
@@ -1196,6 +1255,20 @@ button {
   display: grid;
   grid-template-columns: minmax(360px, 47%) 1fr;
   overflow: hidden;
+}
+
+/* 右側面板(字幕外觀/詞庫/AI 校正)是 fixed 的,會蓋住字幕列表。
+   一開面板就把編輯區讓出 432px —— 調外觀正是最需要同時看到字幕的時候。
+   視窗太窄時讓不出來,就維持原本蓋上去的行為。
+   不加 transition:動的是 grid 容器的 padding,整份字幕列表會被連續重排 200ms。 */
+.editor.docked {
+  padding-right: 432px;
+}
+
+@media (max-width: 1200px) {
+  .editor.docked {
+    padding-right: 0;
+  }
 }
 
 .player-pane {
@@ -1329,6 +1402,32 @@ button {
   flex-shrink: 0;
 }
 
+/* 搜到幾句。放在搜尋框右邊,不用另外去數列表。 */
+.search-hits {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--green-dark);
+  flex-shrink: 0;
+}
+
+/* 取代字串。跟搜尋框並排但要看得出是另一個欄位,所以給底色跟框。 */
+.replace-input {
+  width: 30%;
+  min-width: 90px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.replace-input:focus {
+  outline: none;
+  border-color: var(--green);
+}
+
 .sub-list {
   flex: 1;
   overflow-y: auto;
@@ -1362,6 +1461,12 @@ button {
   box-shadow: none;
 }
 
+/* Shift 多選圈起來的範圍。用底色不用外框,連續好幾列才會看起來是一整塊。 */
+.sub-row.ranged,
+.sub-row.ranged:hover {
+  background: #e6ecff;
+}
+
 .row-time {
   font-family: var(--mono);
   font-size: 12px;
@@ -1393,9 +1498,17 @@ button {
 .sub-row:hover .row-count,
 .sub-row.selected .row-count,
 .sub-row.active .row-count,
+.row-count.flagged,
 .row-count.warn,
 .row-count.over {
   opacity: 1;
+}
+
+/* 有問題的句子(空的/時間重疊/太短/太長)。速度問題另外有 warn/over 的顏色,
+   排在這條後面所以會蓋掉,不會被這裡的紅色吃掉。 */
+.row-count.flagged {
+  color: var(--danger);
+  font-weight: 700;
 }
 
 .sub-row.active .row-count {
@@ -1415,6 +1528,7 @@ button {
 }
 
 /* 超標時在數字後面點一個點,不靠顏色也看得出來 */
+.row-count.flagged::after,
 .row-count.warn::after,
 .row-count.over::after {
   content: "•";
@@ -1947,6 +2061,54 @@ a.btn {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.6;
+}
+
+/* 說明用 <details> 收起來:平常只佔一行,要看再展開。 */
+.style-hint > summary {
+  cursor: pointer;
+  list-style: none;
+  width: fit-content;
+  color: var(--green-dark);
+  padding: 1px 0;
+}
+
+.style-hint > summary::-webkit-details-marker {
+  display: none;
+}
+
+.style-hint > summary::before {
+  content: "ⓘ ";
+}
+
+.style-hint[open] > summary {
+  margin-bottom: 3px;
+}
+
+.style-hint-body {
+  padding-left: 15px;
+}
+
+/* 「單句上限」的即時預覽:每一句一塊,直接看得到會被切成幾句 */
+.split-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+
+.split-preview-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.split-preview-line {
+  background: var(--panel-2);
+  border-left: 2px solid var(--green);
+  border-radius: 0 6px 6px 0;
+  padding: 2px 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 /* ---- 背景工作執行狀態卡 ---- */

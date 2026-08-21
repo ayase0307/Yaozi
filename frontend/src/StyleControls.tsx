@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { api } from "./api";
 import FontPicker, { fontStack } from "./FontPicker";
+import Hint from "./Hint";
 import type { SubtitleStyle } from "./types";
 
 // 斷行規則要跟 backend/exporter.py 的 wrap_text 一致,預覽才等於燒出來的樣子
@@ -366,11 +367,11 @@ export default function StyleControls({
 
       <StyleSim value={value} />
 
-      <p className="style-hint">
+      <Hint>
         尺寸都是佔畫面高度的百分比,所以同一組設定套到 1080p 與 4K 會等比放大。
         每行字數是 Netflix 那類規範的重點:中文一行 14~20 字最好讀。
         想用新的開源字型,先安裝到 Windows 再重開伺服器就會出現在清單裡。
-      </p>
+      </Hint>
     </div>
   );
 }

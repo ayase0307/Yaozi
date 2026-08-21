@@ -1,5 +1,6 @@
 import asyncio
 import shutil
+import subprocess
 import urllib.parse
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -429,6 +430,30 @@ def get_media(pid: str):
     if not path.is_file():
         raise HTTPException(404, "找不到媒體檔")
     return FileResponse(path)
+
+
+@app.get("/api/projects/{pid}/thumb")
+def get_thumb(pid: str):
+    """專案卡的縮圖。第一次要的時候才抽,抽完存成 thumb.jpg 重複用;純音檔沒有畫面。"""
+    meta = _get_project_or_404(pid)
+    d = storage.project_dir(pid)
+    thumb = d / "thumb.jpg"
+    if not thumb.is_file():
+        if meta.get("has_video") is False:
+            raise HTTPException(404, "純音檔沒有畫面")
+        media = d / meta["media_file"]
+        if not media.is_file():
+            raise HTTPException(404, "找不到媒體檔")
+        # 取 10% 處:開頭常常是黑畫面或片頭卡,抽出來一片黑等於沒抽
+        at = max((meta.get("duration") or 0) * 0.1, 0)
+        subprocess.run(
+            [config.FFMPEG, "-y", "-v", "error", "-ss", f"{at:.2f}", "-i", str(media),
+             "-frames:v", "1", "-vf", "scale=360:-2", str(thumb)],
+            capture_output=True, timeout=60,
+        )
+        if not thumb.is_file():
+            raise HTTPException(404, "抽不出畫面")
+    return FileResponse(thumb, media_type="image/jpeg")
 
 
 @app.get("/api/projects/{pid}/export")

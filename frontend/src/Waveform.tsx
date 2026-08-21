@@ -486,16 +486,9 @@ export default function Waveform({
         </div>
       </div>
       <div className="wave-footer">
+        {/* 選中句的開始/結束/秒數改由底部狀態列一處負責,這裡不再印第二份 */}
         <span className="wave-seg-info">
-          {sel ? (
-            <>
-              這句&nbsp;&nbsp;開始 <b className="mono">{formatTimeMs(sel.start)}</b>
-              &nbsp;&nbsp;結束 <b className="mono">{formatTimeMs(sel.end)}</b>
-              &nbsp;&nbsp;<b className="mono">{(sel.end - sel.start).toFixed(3)}</b> 秒
-            </>
-          ) : (
-            "點字幕方塊或列表可選取句子"
-          )}
+          {sel ? "拖方塊兩端改時間,拖中間整句平移" : "點字幕方塊或列表可選取句子"}
         </span>
         <button
           className="btn small"

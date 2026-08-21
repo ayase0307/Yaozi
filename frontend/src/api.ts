@@ -68,11 +68,12 @@ export const api = {
       body: JSON.stringify({ segments, marks }),
     }).then((r) => json<{ ok: boolean }>(r)),
 
-  resegment: (segments: Segment[]) =>
+  // splitChars 不給就用設定頁存的那個值;設定頁的即時預覽要用還沒存的值,所以要能覆寫
+  resegment: (segments: Segment[], splitChars?: number) =>
     fetch("/api/resegment", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ segments }),
+      body: JSON.stringify({ segments, split_chars: splitChars }),
     }).then((r) => json<{ segments: Segment[] }>(r)),
 
   getCuts: (id: string) =>

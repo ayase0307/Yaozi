@@ -16,6 +16,10 @@ export default function StylePanel({
       <div className="fix-head">
         <span className="fix-title">字幕外觀</span>
         <span className="toolbar-spacer" />
+        {/* 「聽成什麼」在設定頁、「長什麼樣」在這裡,兩邊常常要一起調,給個直達的入口 */}
+        <a className="btn small" href="#/settings" title="語言、提示詞、單句上限">
+          辨識設定
+        </a>
         <button className="btn small" onClick={onClose}>
           關閉
         </button>

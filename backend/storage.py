@@ -126,6 +126,10 @@ def list_projects() -> list[dict]:
         if d.is_dir():
             meta = load_project(d.name)
             if meta:
+                # 加句數之前建的專案沒這個欄位,第一次列出來時補一次就好
+                if "seg_count" not in meta:
+                    _sync_seg_count(d.name, len(load_subtitles(d.name).get("segments", [])))
+                    meta = load_project(d.name) or meta
                 projects.append(meta)
     projects.sort(key=lambda m: m.get("created_at", 0), reverse=True)
     return projects
@@ -145,6 +149,16 @@ def load_subtitles(pid: str) -> dict:
 
 def save_subtitles(pid: str, data: dict) -> None:
     _save_json(project_dir(pid) / "subtitles.json", data)
+    _sync_seg_count(pid, len(data.get("segments", [])))
+
+
+def _sync_seg_count(pid: str, count: int) -> None:
+    """句數記在 project.json 裡,首頁列表才不必去開每一份 subtitles.json。
+    只有變了才寫,自動存檔一直打同一個數字不用重寫一次。"""
+    meta = load_project(pid)
+    if meta is not None and meta.get("seg_count") != count:
+        meta["seg_count"] = count
+        save_project(meta)
 
 
 def backup_subtitles(pid: str) -> None:

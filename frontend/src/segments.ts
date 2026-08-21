@@ -64,6 +64,25 @@ export function speedLevel(seg: Segment): "" | "warn" | "over" {
   return v > SPEED_OVER ? "over" : v > SPEED_WARN ? "warn" : "";
 }
 
+/** 一句最多兩行、每行 24 個全形字 —— 超過就是燒出來會擠成一坨的那種。 */
+const MAX_WIDTH = 48;
+
+/**
+ * 這一句有沒有毛病?有的話回傳一句話說明,沒有回傳 ""。
+ * 「跳到下一個問題」跟校對清單都讀這裡,標準只有一份。
+ */
+export function segmentProblem(segments: Segment[], i: number): string {
+  const seg = segments[i];
+  if (!seg) return "";
+  if (!seg.text.trim()) return "這句是空的";
+  if (i > 0 && seg.start < segments[i - 1].end - 0.001) return "跟前一句時間重疊";
+  if (seg.end - seg.start < 0.4) return "停留不到 0.4 秒,幾乎看不到";
+  const level = speedLevel(seg);
+  if (level) return level === "over" ? "太快了,來不及看完" : "偏快";
+  if (textWidth(seg.text) > MAX_WIDTH) return "太長,一屏塞不下";
+  return "";
+}
+
 /**
  * 在文字的 pos 位置把一句切成兩句。
  * 切點時間先按字數比例推估,再磁吸到 0.3 秒內最近的單字邊界。
@@ -153,12 +172,16 @@ export function splitSegmentAtTime(seg: Segment, t: number): [Segment, Segment] 
   ];
 }
 
-/** 把 b 併進 a(a 在前)。 */
+/** 把 b 併進 a(a 在前)。接縫兩邊都是英數字時要補一個空白,不然會黏成 wordword。 */
 export function mergeSegments(a: Segment, b: Segment): Segment {
+  const glue = /[A-Za-z0-9]$/.test(a.text) && /^[A-Za-z0-9]/.test(b.text) ? " " : "";
   return {
     ...a,
     end: b.end,
-    text: a.text + b.text,
+    text: a.text + glue + b.text,
+    trans: a.trans === undefined && b.trans === undefined
+      ? undefined
+      : (a.trans ?? "") + (b.trans ? (a.trans ? " " : "") + b.trans : ""),
     words: [...(a.words ?? []), ...(b.words ?? [])],
   };
 }
