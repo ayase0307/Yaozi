@@ -7,12 +7,13 @@ from pathlib import Path
 
 from fastapi import Body, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import (
     asr,
+    audio,
     burn,
     config,
     cuts,
@@ -245,6 +246,46 @@ def get_burn_file(pid: str):
     )
 
 
+@app.get("/api/projects/{pid}/audio/file")
+async def get_processed_audio(pid: str):
+    """套用音訊設定(去噪/人聲/響度/增益)之後的音檔,直接串流下載。
+
+    影片要等 ffmpeg 重編所以走背景工作,純音訊快得多,邊轉邊送就好。
+    """
+    meta = _get_project_or_404(pid)
+    path = storage.project_dir(pid) / meta["media_file"]
+    if not path.is_file():
+        raise HTTPException(404, "找不到媒體檔")
+    args = [config.FFMPEG, "-v", "error"]
+    trim = meta.get("trim")
+    if trim:
+        args += ["-ss", f"{trim['start']:.3f}", "-t", f"{trim['end'] - trim['start']:.3f}"]
+    args += ["-i", str(path), "-vn"]
+    chain = audio.filter_chain()
+    if chain:
+        args += ["-af", chain]
+    args += ["-c:a", "libmp3lame", "-q:a", "2", "-f", "mp3", "pipe:1"]
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+    async def stream():
+        # 非同步產生器才收得到「使用者中途取消下載」——Starlette 會取消這個 task,
+        # finally 就有機會把 ffmpeg 殺掉。同步版收不到,ffmpeg 會卡在寫滿的管線上不死。
+        loop = asyncio.get_running_loop()
+        try:
+            while chunk := await loop.run_in_executor(None, proc.stdout.read, 64 * 1024):
+                yield chunk
+        finally:
+            proc.kill()
+            proc.wait()
+
+    filename = urllib.parse.quote(f"{meta['name']}_音訊.mp3")
+    return StreamingResponse(
+        stream(),
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
 @app.get("/api/projects/{pid}/cuts")
 def get_cuts(pid: str):
     _get_project_or_404(pid)
@@ -327,6 +368,16 @@ def get_asr():
 @app.put("/api/asr")
 def put_asr(body: dict = Body(...)):
     return asr.save(body)
+
+
+@app.get("/api/audio")
+def get_audio():
+    return audio.load()
+
+
+@app.put("/api/audio")
+def put_audio(body: dict = Body(...)):
+    return audio.save(body)
 
 
 @app.get("/api/llm/status")

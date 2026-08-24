@@ -1,113 +1,143 @@
-# 咬字 Yaozi
+# Yaozi 咬字
 
-**本機影片字幕工具**:拖影片進來 → GPU 語音辨識 → 鍵盤快速校對 → 匯出 SRT/逐字稿/燒錄成品影片。
-所有檔案與運算都在自己電腦上完成,不上傳雲端、不需要帳號。
+**A local-first subtitle tool.** Drop in a video → GPU speech recognition → keyboard-driven
+proofreading → export SRT / transcript, or burn the subtitles straight into the final video.
+Every file and every computation stays on your own machine: no cloud, no account, no subscription.
 
-> A local-first subtitle editor for video creators: Whisper transcription (GPU),
-> keyboard-driven editing with waveform, Traditional-Chinese-optimized output,
-> optional AI proofreading via your own Claude Code subscription. Everything runs
-> on your machine — no cloud, no account.
+[繁體中文說明](README.zh-TW.md)
 
-## 功能
+The interface is available in **English, 日本語 and 繁體中文** (Settings → Interface → Language).
 
-- **語音辨識**:faster-whisper(large-v3),NVIDIA GPU 加速、無卡自動退 CPU;
-  輸出自動簡轉繁+台灣用語(OpenCC)
-- **編輯器**:Enter 斷句、句首 Backspace 合併、Tab 跳行、全程鍵盤操作;
-  復原/重做、自動存檔、搜尋過濾、每句字數與閱讀速度統計
-- **自動斷句**:Whisper 給的碎片黏回完整句子、過長的照單字時間戳切開,
-  優先斷在標點與換氣處;中英各算字寬,一個設定值兩種語言都合身。
-  按「重新斷句」可套到現有字幕,不用重跑辨識
-- **波形區**:拖拉字幕方塊調時間、磁吸(鄰句/Mark 點/畫面切點)、
-  B 鍵切開、雙擊設 Mark 點、切點偵測(ffmpeg 場景偵測)、hover 跟播
-- **詞庫**:「錯誤寫法 → 正確寫法」清單,每次辨識完自動取代(人名、品牌名一勞永逸)
-- **AI 校正(選配)**:偵測到 [Claude Code](https://claude.com/claude-code) 就會出現——
-  用你自己的訂閱抓同音錯字與中國用語,diff 逐句審閱,不自動套用、碰不到時間軸
-- **安全框**:16:9 / 9:16 / 4:3 / 3:4 預覽平台 UI 遮擋區,提醒字幕換行
-- **匯出**:SRT、VTT、逐字稿(純文字/含時間),或直接燒錄字幕輸出成品影片
-  (NVENC 硬體編碼,自動降級 CPU)
+## Features
 
-## 安裝
+- **Speech recognition** — faster-whisper (large-v3), NVIDIA GPU accelerated with an automatic
+  CPU fallback. Chinese output is converted to Traditional Chinese with Taiwanese wording (OpenCC).
+- **Editor** — Enter to split at the cursor, Backspace at line start to merge, Tab to move between
+  lines: the whole pass can be done from the keyboard. Undo/redo, autosave, search and replace,
+  per-line character count and reading-speed warnings.
+- **Auto segmentation** — Whisper's fragments are glued back into sentences and over-long lines are
+  split on word timestamps, preferring punctuation and then breathing pauses. Line length counts
+  CJK characters and Latin letters separately, so one setting fits both. "Re-segment" applies a new
+  setting to existing subtitles without re-running recognition.
+- **Waveform** — drag subtitle blocks to retime, snap to neighbours / marks / detected scene cuts,
+  `B` to split at the playhead, double-click to set a mark, hover to scrub.
+- **Audio processing** — denoise (`afftdn`), voice band (80 Hz–8 kHz), loudness normalisation
+  (EBU R128) and gain. Applied when burning in and available as a processed MP3 download;
+  optionally applied before recognition for badly recorded material.
+- **Word list** — a "wrong form → correct form" list applied automatically after every
+  transcription, so names and jargon are fixed once and for all.
+- **Translation and AI proofreading (optional)** — appears when
+  [Claude Code](https://claude.com/claude-code) or the Codex CLI is detected. It uses the CLI you
+  are already signed in to, so no API key is needed. Proofreading catches homophone typos and
+  regional wording and is reviewed line by line as a diff — nothing is applied automatically and
+  timings are never touched.
+- **Import** — bring in an existing SRT / VTT file and edit or burn it here.
+- **Safe area** — 16:9 / 9:16 / 4:3 / 3:4 overlays showing where platform UI covers the frame, so
+  you know when to wrap a line.
+- **Export** — SRT, bilingual SRT, VTT, transcript (plain or timestamped), processed audio (MP3),
+  or the finished video with subtitles burned in (NVENC hardware encoding, automatic CPU fallback).
 
-需求:Windows 10/11。有 NVIDIA 顯卡最好(辨識快很多),沒有也能用。
+## Install
+
+Requirements: Windows 10/11. An NVIDIA GPU makes recognition much faster but is not required.
 
 ```
-git clone <本倉庫>
-點兩下 setup.bat        ← 自動安裝 Python/ffmpeg、建環境、產生體檢報告
-點兩下 start.bat        ← 啟動,瀏覽器自動開 http://127.0.0.1:8765
+git clone <this repo>
+double-click setup.bat     # installs Python/ffmpeg, builds the environment, writes a health report
+double-click start.bat     # starts the server and opens http://127.0.0.1:8765
 ```
 
-第一次辨識會自動下載 Whisper 模型(large-v3 約 3GB,之後不用)。
-下載中斷沒關係,下次自動續傳。模型存在專案的 `models/` 資料夾,
-搬電腦時連資料夾一起複製就不用重新下載。
+The first transcription downloads the Whisper model (large-v3, about 3 GB; once only). An
+interrupted download resumes next time. Models live in the project's `models/` folder — copy that
+folder along with the project when moving to another machine and nothing needs downloading again.
 
-前端已預先建置(`frontend/dist` 在版控內),一般使用**不需要安裝 Node.js**;
-只有要改前端程式碼的開發者才需要。
+The frontend is pre-built (`frontend/dist` is version-controlled), so **Node.js is not needed** for
+normal use — only for working on the frontend code.
 
-### 疑難排解
+### Troubleshooting
 
-- **模型下載失敗 / 連不上 HuggingFace**(部分地區會被擋):啟動前設定鏡像站
-  環境變數即可,例如在 `start.bat` 的 `@echo off` 下一行加
-  `set HF_ENDPOINT=https://hf-mirror.com`
-- **macOS / Linux**:`setup.bat`/`start.bat` 是 Windows 腳本,其他平台請手動安裝:
-  裝好 Python 3.13 與 ffmpeg 後,`python -m venv .venv`、
-  用 venv 的 pip 裝 `backend/requirements.lock.txt`
-  (其中 `nvidia-*` 套件僅 Windows/Linux+NVIDIA 需要,mac 可略過),
-  然後 `python run.py`。核心程式是跨平台的,但主要測試環境為 Windows。
+- **Model download fails / cannot reach HuggingFace** (blocked in some regions): set a mirror
+  before starting, e.g. add `set HF_ENDPOINT=https://hf-mirror.com` right after `@echo off` in
+  `start.bat`.
+- **macOS / Linux**: `setup.bat` and `start.bat` are Windows scripts. Elsewhere, install Python 3.13
+  and ffmpeg, then `python -m venv .venv`, install `backend/requirements.lock.txt` with the venv's
+  pip (the `nvidia-*` packages are only needed on Windows/Linux with an NVIDIA GPU and can be
+  skipped on macOS), and run `python run.py`. The core is cross-platform, but Windows is where it
+  is actually tested.
 
-## 關閉
+## Shutting down
 
-關掉**終端機視窗**(或按 `Ctrl+C`)才是關閉伺服器;只關瀏覽器分頁的話,
-背景辨識會繼續跑,重開網頁進度還在——這是刻意設計。
+Closing the **terminal window** (or pressing `Ctrl+C`) stops the server. Closing only the browser
+tab leaves recognition running in the background and the progress is still there when you reopen
+the page — that is deliberate.
 
-## 快捷鍵
+## Shortcuts
 
-| 按鍵 | 功能 |
+| Key | Action |
 |---|---|
-| 點一下字幕 | 影片跳到該句 |
-| 點兩下 / Enter | 編輯該句 |
-| 編輯中 `Enter` | 在游標處斷句 |
-| 編輯中句首 `Backspace` | 與上一句合併 |
-| `Tab` / `Shift+Tab` | 下一句 / 上一句 |
-| `空白鍵` | 播放 / 暫停 |
-| `↑` `↓` | 選句並跳到該時間 |
-| `B` | 在播放位置切開字幕 |
-| `Delete` | 刪除選中的字幕 |
-| 雙擊波形 | 新增 / 移除 Mark 點 |
-| `Ctrl+Z` / `Ctrl+Y` | 復原 / 重做 |
+| Click a line | Seek the video to it |
+| Double-click / Enter | Edit the line |
+| `Enter` while editing | Split at the cursor |
+| `Backspace` at line start | Merge with the previous line |
+| `Tab` / `Shift+Tab` | Next / previous line |
+| `Space` | Play / pause |
+| `↑` `↓` | Select a line and seek to it |
+| `B` | Split the subtitle at the playhead |
+| `N` | Jump to the next problem line |
+| `Shift+click` / `Shift+↑↓` | Select a range of lines |
+| `Ctrl+M` | Merge the selected lines |
+| `Delete` | Delete the selected subtitles |
+| Double-click the waveform | Add / remove a mark |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 
-## 設定(環境變數,可寫進 start.bat)
+## Configuration (environment variables, can go in start.bat)
 
-| 變數 | 預設 | 說明 |
+| Variable | Default | Meaning |
 |---|---|---|
-| `YAOZI_MODEL` | `large-v3` | Whisper 模型(低配機器可用 `medium`/`small`) |
-| `YAOZI_LANG` | `auto` | 自動偵測語言;可鎖成 `zh`、`ja` 等固定語言 |
-| `YAOZI_PORT` | `8765` | 服務埠 |
-| `YAOZI_DATA` | `./projects` | 專案資料存放位置 |
-| `YAOZI_MODELS` | `./models` | 模型存放位置 |
-| `YAOZI_FIX_MODEL` | `sonnet` | AI 校正使用的 Claude 模型 |
+| `YAOZI_MODEL` | `large-v3` | Whisper model (`medium`/`small` on modest machines) |
+| `YAOZI_LANG` | `auto` | Auto-detect language, or pin it to `zh`, `ja`, … |
+| `YAOZI_PORT` | `8765` | Server port |
+| `YAOZI_DATA` | `./projects` | Where project data is stored |
+| `YAOZI_MODELS` | `./models` | Where models are stored |
+| `YAOZI_FIX_MODEL` | `sonnet` | Claude model used for AI proofreading |
 
-## 開發
+Language, prompt, VAD sensitivity, line length, subtitle style and audio processing are global
+settings edited in the app (Settings page) and stored as JSON next to your projects.
+
+## Development
 
 ```powershell
-# 後端(自動重載)
+# backend (auto-reload)
 .venv\Scripts\uvicorn backend.main:app --reload --port 8765
 
-# 前端(開發模式,proxy 到後端)
+# frontend (dev mode, proxied to the backend)
 cd frontend; npm run dev
 
-# 前端改完要正式使用時重新建置
+# rebuild before using it for real
 cd frontend; npm run build
+
+# checks
+cd frontend; npm run check      # TypeScript
+cd frontend; npm run selfcheck  # subtitle logic + translation tables
+python -m backend.test_style    # subtitle style / ASS output
+python -m backend.test_audio    # audio filter chain
 ```
 
-架構:Python FastAPI 後端(faster-whisper、ffmpeg、OpenCC)+ React/Vite 前端;
-專案資料是 `projects/<id>/` 下的純 JSON 檔,沒有資料庫。
-安全性:伺服器只綁 127.0.0.1,並有 Host 驗證(擋 DNS rebinding)與
-Origin 檢查(擋 CSRF)。
+Architecture: Python FastAPI backend (faster-whisper, ffmpeg, OpenCC) + React/Vite frontend.
+Project data is plain JSON under `projects/<id>/` — there is no database.
+Security: the server binds to 127.0.0.1 only, with Host validation (blocks DNS rebinding) and an
+Origin check (blocks CSRF).
 
-## 致謝
+**Translations** live in `frontend/src/locales/`. The key of every entry is the Traditional Chinese
+source string, so a missing key simply shows Chinese instead of blank text. `npm run selfcheck`
+fails if a `t("…")` in the code has no entry in `en.ts` and `ja.ts`, or if the `{0}` placeholders
+do not match. To add a language: copy `en.ts`, translate the values, and register it in `i18n.ts`.
 
-靈感來自 YouTuber [壹加壹](https://www.youtube.com/@1plus1tw) 開發的字幕網站
-What'Sub 的介紹影片——本專案是它的個人本機版翻作,介面風格亦致敬該作品。
+## Credits
+
+Inspired by a video about What'Sub, the subtitle site built by the YouTuber
+[壹加壹](https://www.youtube.com/@1plus1tw). This project is a personal local-first take on that
+idea, and the interface is a nod to it.
 
 ## License
 

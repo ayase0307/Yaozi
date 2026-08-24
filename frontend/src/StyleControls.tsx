@@ -3,6 +3,7 @@ import { api } from "./api";
 import FontPicker, { fontStack } from "./FontPicker";
 import Hint from "./Hint";
 import type { SubtitleStyle } from "./types";
+import { t } from "./i18n";
 
 // 斷行規則要跟 backend/exporter.py 的 wrap_text 一致,預覽才等於燒出來的樣子
 const BREAK_AFTER = "，。、；：？！,.;:?! ";
@@ -157,18 +158,18 @@ export default function StyleControls({
   return (
     <div className="style-body">
       <div className="style-row">
-        <span className="style-label">字型</span>
+        <span className="style-label">{t("字型")}</span>
         <FontPicker value={value.font} onChange={(font) => update({ font })} placeholder="" />
       </div>
 
       <div className="style-row">
-        <span className="style-label">顏色</span>
+        <span className="style-label">{t("顏色")}</span>
         <input
           type="color"
           className="style-color"
           value={value.color}
           onChange={(e) => update({ color: e.target.value })}
-          aria-label="文字顏色"
+          aria-label={t("文字顏色")}
         />
         <label className="style-check">
           <input
@@ -176,7 +177,7 @@ export default function StyleControls({
             checked={value.bold}
             onChange={(e) => update({ bold: e.target.checked })}
           />
-          粗體
+          {t("粗體")}
         </label>
         <label className="style-check">
           <input
@@ -184,23 +185,23 @@ export default function StyleControls({
             checked={value.italic}
             onChange={(e) => update({ italic: e.target.checked })}
           />
-          斜體
+          {t("斜體")}
         </label>
       </div>
 
-      <Slider label="字級" value={value.size} min={2} max={14} step={0.1} onChange={(size) => update({ size })} />
-      <Slider label="字距" value={value.spacing} min={0} max={1} step={0.02} onChange={(spacing) => update({ spacing })} />
+      <Slider label={t("字級")} value={value.size} min={2} max={14} step={0.1} onChange={(size) => update({ size })} />
+      <Slider label={t("字距")} value={value.spacing} min={0} max={1} step={0.02} onChange={(spacing) => update({ spacing })} />
 
       <div className="style-divider" />
 
       <div className="style-row">
-        <span className="style-label">邊框</span>
+        <span className="style-label">{t("邊框")}</span>
         <Seg
           value={value.border}
           options={[
-            ["outline", "描邊"],
-            ["box", "底框"],
-            ["none", "無"],
+            ["outline", t("描邊")],
+            ["box", t("底框")],
+            ["none", t("無")],
           ]}
           onChange={(border) => update({ border: border as SubtitleStyle["border"] })}
         />
@@ -209,7 +210,7 @@ export default function StyleControls({
           className="style-color"
           value={value.outline_color}
           onChange={(e) => update({ outline_color: e.target.value })}
-          aria-label={box ? "底框顏色" : "描邊顏色"}
+          aria-label={box ? t("底框顏色") : t("描邊顏色")}
           disabled={value.border === "none"}
         />
       </div>
@@ -217,7 +218,7 @@ export default function StyleControls({
       {value.border !== "none" && (
         <>
           <Slider
-            label={box ? "框內距" : "粗細"}
+            label={box ? t("框內距") : t("粗細")}
             value={value.outline}
             min={0}
             max={2}
@@ -225,7 +226,7 @@ export default function StyleControls({
             onChange={(outline) => update({ outline })}
           />
           <Slider
-            label="不透明"
+            label={t("不透明")}
             value={value.outline_opacity}
             min={0}
             max={100}
@@ -238,20 +239,20 @@ export default function StyleControls({
       )}
 
       <div className="style-row">
-        <span className="style-label">陰影</span>
+        <span className="style-label">{t("陰影")}</span>
         <input
           type="color"
           className="style-color"
           value={value.shadow_color}
           onChange={(e) => update({ shadow_color: e.target.value })}
-          aria-label="陰影顏色"
+          aria-label={t("陰影顏色")}
         />
-        <span className="style-hint style-inline-hint">位移 0 就是關掉陰影</span>
+        <span className="style-hint style-inline-hint">{t("位移 0 就是關掉陰影")}</span>
       </div>
-      <Slider label="位移" value={value.shadow} min={0} max={2} step={0.05} onChange={(shadow) => update({ shadow })} />
+      <Slider label={t("位移")} value={value.shadow} min={0} max={2} step={0.05} onChange={(shadow) => update({ shadow })} />
       {value.shadow > 0 && (
         <Slider
-          label="不透明"
+          label={t("不透明")}
           value={value.shadow_opacity}
           min={0}
           max={100}
@@ -265,42 +266,42 @@ export default function StyleControls({
       <div className="style-divider" />
 
       <div className="style-row">
-        <span className="style-label">對齊</span>
+        <span className="style-label">{t("對齊")}</span>
         <Seg
           value={value.align}
           options={[
-            ["left", "靠左"],
-            ["center", "置中"],
-            ["right", "靠右"],
+            ["left", t("靠左")],
+            ["center", t("置中")],
+            ["right", t("靠右")],
           ]}
           onChange={(align) => update({ align: align as SubtitleStyle["align"] })}
         />
         <Seg
           value={value.vertical}
           options={[
-            ["bottom", "貼下"],
-            ["top", "貼上"],
+            ["bottom", t("貼下")],
+            ["top", t("貼上")],
           ]}
           onChange={(vertical) => update({ vertical: vertical as SubtitleStyle["vertical"] })}
         />
       </div>
 
       <Slider
-        label={value.vertical === "top" ? "離頂邊" : "離底邊"}
+        label={value.vertical === "top" ? t("離頂邊") : t("離底邊")}
         value={value.bottom}
         min={0}
         max={40}
         step={0.5}
         onChange={(bottom) => update({ bottom })}
       />
-      <Slider label="左右留白" value={value.side} min={0} max={30} step={0.5} unit="% 畫面寬" onChange={(side) => update({ side })} />
+      <Slider label={t("左右留白")} value={value.side} min={0} max={30} step={0.5} unit={t("% 畫面寬")} onChange={(side) => update({ side })} />
       <Slider
-        label="每行字數"
+        label={t("每行字數")}
         value={value.max_chars}
         min={0}
         max={40}
         step={1}
-        unit={value.max_chars === 0 ? "不斷行" : "字"}
+        unit={value.max_chars === 0 ? t("不斷行") : t("字")}
         digits={0}
         onChange={(max_chars) => update({ max_chars })}
       />
@@ -308,27 +309,27 @@ export default function StyleControls({
       <div className="style-divider" />
 
       <div className="style-row">
-        <span className="style-label">譯文</span>
+        <span className="style-label">{t("譯文")}</span>
         <span className="style-hint style-inline-hint">
-          雙語字幕的第二行。邊框、陰影、對齊跟原文共用。
+          {t("雙語字幕的第二行。邊框、陰影、對齊跟原文共用。")}
         </span>
       </div>
       <div className="style-row">
-        <span className="style-label">字型</span>
+        <span className="style-label">{t("字型")}</span>
         <FontPicker
           value={value.trans_font}
           onChange={(trans_font) => update({ trans_font })}
-          placeholder="同原文"
+          placeholder={t("同原文")}
         />
       </div>
       <div className="style-row">
-        <span className="style-label">顏色</span>
+        <span className="style-label">{t("顏色")}</span>
         <input
           type="color"
           className="style-color"
           value={value.trans_color}
           onChange={(e) => update({ trans_color: e.target.value })}
-          aria-label="譯文顏色"
+          aria-label={t("譯文顏色")}
         />
         <label className="style-check">
           <input
@@ -336,7 +337,7 @@ export default function StyleControls({
             checked={value.trans_bold}
             onChange={(e) => update({ trans_bold: e.target.checked })}
           />
-          粗體
+          {t("粗體")}
         </label>
         <label className="style-check">
           <input
@@ -344,20 +345,20 @@ export default function StyleControls({
             checked={value.trans_italic}
             onChange={(e) => update({ trans_italic: e.target.checked })}
           />
-          斜體
+          {t("斜體")}
         </label>
       </div>
       <Slider
-        label="字級"
+        label={t("字級")}
         value={value.trans_size}
         min={0}
         max={14}
         step={0.1}
-        unit={value.trans_size === 0 ? "同原文" : "% 畫面高"}
+        unit={value.trans_size === 0 ? t("同原文") : t("% 畫面高")}
         onChange={(trans_size) => update({ trans_size })}
       />
       <Slider
-        label="行間距"
+        label={t("行間距")}
         value={value.trans_gap}
         min={0}
         max={6}
@@ -368,9 +369,7 @@ export default function StyleControls({
       <StyleSim value={value} />
 
       <Hint>
-        尺寸都是佔畫面高度的百分比,所以同一組設定套到 1080p 與 4K 會等比放大。
-        每行字數是 Netflix 那類規範的重點:中文一行 14~20 字最好讀。
-        想用新的開源字型,先安裝到 Windows 再重開伺服器就會出現在清單裡。
+        {t("尺寸都是佔畫面高度的百分比,所以同一組設定套到 1080p 與 4K 會等比放大。每行字數是 Netflix 那類規範的重點:中文一行 14~20 字最好讀。想用新的開源字型,先安裝到 Windows 再重開伺服器就會出現在清單裡。")}
       </Hint>
     </div>
   );
@@ -378,10 +377,10 @@ export default function StyleControls({
 
 // 雙語那句放第一個:譯文的字級、顏色、行間距要看得到才調得動
 const SAMPLES: { text: string; trans?: string }[] = [
-  { text: "今天我們來聊聊這個做法為什麼有效", trans: "Today we'll talk about why this works" },
-  { text: "這是字幕的模擬預覽,字級、邊框、位置都照實際比例換算" },
-  { text: "字距、底框、陰影都可以在這裡先看過再燒錄" },
-  { text: "Mixed 中英 123 測試 ABC" },
+  { text: t("今天我們來聊聊這個做法為什麼有效"), trans: "Today we'll talk about why this works" },
+  { text: t("這是字幕的模擬預覽,字級、邊框、位置都照實際比例換算") },
+  { text: t("字距、底框、陰影都可以在這裡先看過再燒錄") },
+  { text: t("Mixed 中英 123 測試 ABC") },
 ];
 
 /** 字幕模擬區:16:9 假畫面,所有尺寸都照畫面高度換算,看到的比例就是燒出來的比例。 */
@@ -404,12 +403,12 @@ function StyleSim({ value }: { value: SubtitleStyle }) {
   return (
     <div className="style-sim">
       <div className="style-sim-head">
-        <span className="style-label">模擬</span>
+        <span className="style-label">{t("模擬")}</span>
         <button className="link-btn" onClick={() => setLine((i) => (i + 1) % SAMPLES.length)}>
-          換一句
+          {t("換一句")}
         </button>
         <button className="link-btn" onClick={() => setLight((v) => !v)}>
-          {light ? "換深色背景" : "換淺色背景"}
+          {light ? t("換深色背景") : t("換淺色背景")}
         </button>
       </div>
       <div ref={box} className={"style-sim-frame" + (light ? " light" : "")}>
@@ -450,7 +449,7 @@ function Slider({
   min,
   max,
   step,
-  unit = "% 畫面高",
+  unit = t("% 畫面高"),
   digits,
   onChange,
 }: {

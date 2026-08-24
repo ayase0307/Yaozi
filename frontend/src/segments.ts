@@ -1,4 +1,5 @@
 import type { Segment } from "./types";
+import { t } from "./i18n.ts";
 
 export function uid(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -27,6 +28,29 @@ export function formatTimeMs(t: number): string {
 }
 
 const round3 = (t: number) => Math.round(t * 1000) / 1000;
+
+/** 解析 SRT / VTT 的時間軸與文字。序號、WEBVTT 標頭、cue 設定都直接忽略,
+ *  只認「時間 --> 時間」那一行,底下到空行為止都算內文(多行折成一行)。
+ *  解析不出任何一句就回空陣列,呼叫端負責提示。 */
+export function parseSrt(text: string): Segment[] {
+  const time = /(\d+):(\d{2}):(\d{2})[.,](\d{1,3})\s*-->\s*(\d+):(\d{2}):(\d{2})[.,](\d{1,3})/;
+  const secs = (h: string, m: string, s: string, ms: string) =>
+    round3(Number(h) * 3600 + Number(m) * 60 + Number(s) + Number(ms.padEnd(3, "0")) / 1000);
+
+  const out: Segment[] = [];
+  const lines = text.replace(/\r/g, "").split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const m = time.exec(lines[i]);
+    if (!m) continue;
+    const body: string[] = [];
+    while (++i < lines.length && lines[i].trim() !== "") body.push(lines[i].trim());
+    const start = secs(m[1], m[2], m[3], m[4]);
+    const end = secs(m[5], m[6], m[7], m[8]);
+    if (end <= start || !body.length) continue;
+    out.push({ id: uid(), start, end, text: body.join(" ") });
+  }
+  return out;
+}
 
 // 全形字的 Unicode 區段(CJK、假名、韓文、全形標點),跟後端 transcriber._width() 同一套。
 // 直接抄 East_Asian_Width 的 W/F 主要區塊,不必為了幾個冷門字去搬整張表。
@@ -74,12 +98,12 @@ const MAX_WIDTH = 48;
 export function segmentProblem(segments: Segment[], i: number): string {
   const seg = segments[i];
   if (!seg) return "";
-  if (!seg.text.trim()) return "這句是空的";
-  if (i > 0 && seg.start < segments[i - 1].end - 0.001) return "跟前一句時間重疊";
-  if (seg.end - seg.start < 0.4) return "停留不到 0.4 秒,幾乎看不到";
+  if (!seg.text.trim()) return t("這句是空的");
+  if (i > 0 && seg.start < segments[i - 1].end - 0.001) return t("跟前一句時間重疊");
+  if (seg.end - seg.start < 0.4) return t("停留不到 0.4 秒,幾乎看不到");
   const level = speedLevel(seg);
-  if (level) return level === "over" ? "太快了,來不及看完" : "偏快";
-  if (textWidth(seg.text) > MAX_WIDTH) return "太長,一屏塞不下";
+  if (level) return level === "over" ? t("太快了,來不及看完") : t("偏快");
+  if (textWidth(seg.text) > MAX_WIDTH) return t("太長,一屏塞不下");
   return "";
 }
 

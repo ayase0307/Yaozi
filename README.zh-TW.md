@@ -1,0 +1,134 @@
+# 咬字 Yaozi
+
+**本機影片字幕工具**:拖影片進來 → GPU 語音辨識 → 鍵盤快速校對 → 匯出 SRT/逐字稿/燒錄成品影片。
+所有檔案與運算都在自己電腦上完成,不上傳雲端、不需要帳號、沒有月費。
+
+[English](README.md)
+
+介面支援**繁體中文、English、日本語**(設定 → 介面 → 介面語言)。
+
+## 功能
+
+- **語音辨識**:faster-whisper(large-v3),NVIDIA GPU 加速、無卡自動退 CPU;
+  輸出自動簡轉繁+台灣用語(OpenCC)
+- **編輯器**:Enter 斷句、句首 Backspace 合併、Tab 跳行、全程鍵盤操作;
+  復原/重做、自動存檔、搜尋取代、每句字數與閱讀速度統計
+- **自動斷句**:Whisper 給的碎片黏回完整句子、過長的照單字時間戳切開,
+  優先斷在標點與換氣處;中英各算字寬,一個設定值兩種語言都合身。
+  按「重新斷句」可套到現有字幕,不用重跑辨識
+- **波形區**:拖拉字幕方塊調時間、磁吸(鄰句/Mark 點/畫面切點)、
+  B 鍵切開、雙擊設 Mark 點、切點偵測(ffmpeg 場景偵測)、hover 跟播
+- **音訊處理**:降噪(`afftdn`)、人聲頻段(80Hz~8kHz)、響度標準化(EBU R128)、音量增益。
+  燒錄成品時套用,也能單獨下載處理後的 MP3;收音很糟的素材可以選擇在辨識前先處理
+- **詞庫**:「錯誤寫法 → 正確寫法」清單,每次辨識完自動取代(人名、品牌名一勞永逸)
+- **翻譯與 AI 校正(選配)**:偵測到 [Claude Code](https://claude.com/claude-code) 或 Codex CLI
+  就會出現,直接用你已登入的 CLI,不必另外填 API key。校正會抓同音錯字與中國用語,
+  以 diff 逐句審閱,不自動套用、碰不到時間軸
+- **匯入**:讀進現成的 SRT / VTT,用這裡的編輯器繼續改或直接燒錄
+- **安全框**:16:9 / 9:16 / 4:3 / 3:4 預覽平台 UI 遮擋區,提醒字幕換行
+- **匯出**:SRT、雙語 SRT、VTT、逐字稿(純文字/含時間)、處理後音訊(MP3),
+  或直接燒錄字幕輸出成品影片(NVENC 硬體編碼,自動降級 CPU)
+
+## 安裝
+
+需求:Windows 10/11。有 NVIDIA 顯卡最好(辨識快很多),沒有也能用。
+
+```
+git clone <本倉庫>
+點兩下 setup.bat        ← 自動安裝 Python/ffmpeg、建環境、產生體檢報告
+點兩下 start.bat        ← 啟動,瀏覽器自動開 http://127.0.0.1:8765
+```
+
+第一次辨識會自動下載 Whisper 模型(large-v3 約 3GB,之後不用)。
+下載中斷沒關係,下次自動續傳。模型存在專案的 `models/` 資料夾,
+搬電腦時連資料夾一起複製就不用重新下載。
+
+前端已預先建置(`frontend/dist` 在版控內),一般使用**不需要安裝 Node.js**;
+只有要改前端程式碼的開發者才需要。
+
+### 疑難排解
+
+- **模型下載失敗 / 連不上 HuggingFace**(部分地區會被擋):啟動前設定鏡像站
+  環境變數即可,例如在 `start.bat` 的 `@echo off` 下一行加
+  `set HF_ENDPOINT=https://hf-mirror.com`
+- **macOS / Linux**:`setup.bat`/`start.bat` 是 Windows 腳本,其他平台請手動安裝:
+  裝好 Python 3.13 與 ffmpeg 後,`python -m venv .venv`、
+  用 venv 的 pip 裝 `backend/requirements.lock.txt`
+  (其中 `nvidia-*` 套件僅 Windows/Linux+NVIDIA 需要,mac 可略過),
+  然後 `python run.py`。核心程式是跨平台的,但主要測試環境為 Windows。
+
+## 關閉
+
+關掉**終端機視窗**(或按 `Ctrl+C`)才是關閉伺服器;只關瀏覽器分頁的話,
+背景辨識會繼續跑,重開網頁進度還在——這是刻意設計。
+
+## 快捷鍵
+
+| 按鍵 | 功能 |
+|---|---|
+| 點一下字幕 | 影片跳到該句 |
+| 點兩下 / Enter | 編輯該句 |
+| 編輯中 `Enter` | 在游標處斷句 |
+| 編輯中句首 `Backspace` | 與上一句合併 |
+| `Tab` / `Shift+Tab` | 下一句 / 上一句 |
+| `空白鍵` | 播放 / 暫停 |
+| `↑` `↓` | 選句並跳到該時間 |
+| `B` | 在播放位置切開字幕 |
+| `N` | 跳到下一個有問題的句子 |
+| `Shift+點` / `Shift+↑↓` | 選取連續多句 |
+| `Ctrl+M` | 把選取的多句合併成一句 |
+| `Delete` | 刪除選中的字幕 |
+| 雙擊波形 | 新增 / 移除 Mark 點 |
+| `Ctrl+Z` / `Ctrl+Y` | 復原 / 重做 |
+
+## 設定(環境變數,可寫進 start.bat)
+
+| 變數 | 預設 | 說明 |
+|---|---|---|
+| `YAOZI_MODEL` | `large-v3` | Whisper 模型(低配機器可用 `medium`/`small`) |
+| `YAOZI_LANG` | `auto` | 自動偵測語言;可鎖成 `zh`、`ja` 等固定語言 |
+| `YAOZI_PORT` | `8765` | 服務埠 |
+| `YAOZI_DATA` | `./projects` | 專案資料存放位置 |
+| `YAOZI_MODELS` | `./models` | 模型存放位置 |
+| `YAOZI_FIX_MODEL` | `sonnet` | AI 校正使用的 Claude 模型 |
+
+辨識語言、提示詞、VAD 靈敏度、單句上限、字幕外觀、音訊處理都是全域設定,
+在設定頁裡改,存成專案資料夾旁邊的 JSON。
+
+## 開發
+
+```powershell
+# 後端(自動重載)
+.venv\Scripts\uvicorn backend.main:app --reload --port 8765
+
+# 前端(開發模式,proxy 到後端)
+cd frontend; npm run dev
+
+# 前端改完要正式使用時重新建置
+cd frontend; npm run build
+
+# 檢查
+cd frontend; npm run check      # TypeScript
+cd frontend; npm run selfcheck  # 字幕邏輯 + 翻譯表
+python -m backend.test_style    # 字幕樣式 / ASS 輸出
+python -m backend.test_audio    # 音訊濾鏡鏈
+```
+
+架構:Python FastAPI 後端(faster-whisper、ffmpeg、OpenCC)+ React/Vite 前端;
+專案資料是 `projects/<id>/` 下的純 JSON 檔,沒有資料庫。
+安全性:伺服器只綁 127.0.0.1,並有 Host 驗證(擋 DNS rebinding)與
+Origin 檢查(擋 CSRF)。
+
+**翻譯**放在 `frontend/src/locales/`。每一條的 key 就是繁體中文原句,
+所以少翻一句只是那一句維持中文,不會變成空白。`npm run selfcheck` 會檢查
+程式碼裡的每個 `t("…")` 在 `en.ts`、`ja.ts` 都有對應,`{0}` 參數也要對得上。
+要加新語言:複製 `en.ts` 翻完,再到 `i18n.ts` 註冊。
+
+## 致謝
+
+靈感來自 YouTuber [壹加壹](https://www.youtube.com/@1plus1tw) 開發的字幕網站
+What'Sub 的介紹影片——本專案是它的個人本機版翻作,介面風格亦致敬該作品。
+
+## License
+
+MIT

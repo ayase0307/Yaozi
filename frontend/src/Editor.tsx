@@ -14,6 +14,7 @@ import {
   formatTime,
   formatTimeMs,
   mergeSegments,
+  parseSrt,
   readingSpeed,
   speedLevel,
   segmentProblem,
@@ -39,37 +40,40 @@ import {
   type TranslateJob,
 } from "./types";
 import Waveform from "./Waveform";
+import { t } from "./i18n";
 
 type SaveState = "saved" | "saving" | "dirty" | "error";
 
 const SAVE_LABEL: Record<SaveState, string> = {
-  saved: "已存本機",
-  saving: "儲存中…",
-  dirty: "編輯中…",
-  error: "儲存失敗,稍後自動重試",
+  saved: t("已存本機"),
+  saving: t("儲存中…"),
+  dirty: t("編輯中…"),
+  error: t("儲存失敗,稍後自動重試"),
 };
 
 const EXPORT_FORMATS = [
-  { format: "srt", label: "SRT 字幕檔" },
-  { format: "srt-bi", label: "SRT 雙語字幕檔" },
-  { format: "vtt", label: "VTT 字幕檔" },
-  { format: "txt", label: "逐字稿(純文字)" },
-  { format: "txt-ts", label: "逐字稿(含時間)" },
+  { format: "srt", label: t("SRT 字幕檔") },
+  { format: "srt-bi", label: t("SRT 雙語字幕檔") },
+  { format: "vtt", label: t("VTT 字幕檔") },
+  { format: "txt", label: t("逐字稿(純文字)") },
+  { format: "txt-ts", label: t("逐字稿(含時間)") },
 ];
 
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
 const HOTKEYS: [string, string][] = [
-  ["Enter", "在游標處斷句"],
-  ["Backspace", "句首按下與上句合併"],
-  ["Tab / Shift+Tab", "跳到下一句 / 上一句"],
-  ["空白鍵", "播放 / 暫停"],
-  ["↑ ↓", "選句並跳到該時間"],
-  ["B", "在播放位置切開字幕"],
-  ["N", "跳到下一個有問題的句子"],
-  ["Shift+點 / Shift+↑↓", "選取連續多句"],
-  ["Ctrl+M", "把選取的多句合併成一句"],
-  ["Delete", "刪除選中的字幕"],
-  ["雙擊波形", "新增 / 移除 Mark 點"],
-  ["Ctrl+Z / Ctrl+Y", "復原 / 重做"],
+  ["Enter", t("在游標處斷句")],
+  ["Backspace", t("句首按下與上句合併")],
+  ["Tab / Shift+Tab", t("跳到下一句 / 上一句")],
+  [t("空白鍵"), t("播放 / 暫停")],
+  ["↑ ↓", t("選句並跳到該時間")],
+  ["B", t("在播放位置切開字幕")],
+  ["N", t("跳到下一個有問題的句子")],
+  [t("Shift+點 / Shift+↑↓"), t("選取連續多句")],
+  ["Ctrl+M", t("把選取的多句合併成一句")],
+  ["Delete", t("刪除選中的字幕")],
+  [t("雙擊波形"), t("新增 / 移除 Mark 點")],
+  ["Ctrl+Z / Ctrl+Y", t("復原 / 重做")],
 ];
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
@@ -77,8 +81,8 @@ const round3 = (x: number) => Math.round(x * 1000) / 1000;
 // 閱讀速度超標時字數會變色,滑過去說明是什麼意思
 const SPEED_HINT: Record<"" | "warn" | "over", string> = {
   "": "",
-  warn: " · 偏快,觀眾可能來不及看完",
-  over: " · 太快了,這句要拉長或拆短",
+  warn: t(" · 偏快,觀眾可能來不及看完"),
+  over: t(" · 太快了,這句要拉長或拆短"),
 };
 
 const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
@@ -161,6 +165,9 @@ export default function Editor({ projectId }: { projectId: string }) {
   const saveStateRef = useRef(saveState);
   saveStateRef.current = saveState;
 
+  // 校稿時常用的慢放/快轉。播放器本來就有 playbackRate,存 localStorage 讓它跨專案記住
+  const [speed, setSpeed] = useState(() => Number(localStorage.getItem("yaozi:speed")) || 1);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   // 影片要 status === "done" 才會出現在畫面上,rect 得等到那時候才算得出來
   const videoRect = useVideoRect(videoRef, project?.status === "done");
@@ -169,8 +176,14 @@ export default function Editor({ projectId }: { projectId: string }) {
   const justLoadedRef = useRef<Segment[] | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
   const exportMenuRef = useRef<HTMLDetailsElement>(null);
+  const srtInputRef = useRef<HTMLInputElement>(null);
 
   const running = project ? RUNNING_STATUSES.includes(project.status) : false;
+
+  useEffect(() => {
+    localStorage.setItem("yaozi:speed", String(speed));
+    if (videoRef.current) videoRef.current.playbackRate = speed;
+  }, [speed, project?.status]);
 
   const rename = useCallback(
     (name: string) => {
@@ -311,12 +324,12 @@ export default function Editor({ projectId }: { projectId: string }) {
             if (items.length) {
               setReviewItems(items);
             } else {
-              alert("AI 檢查完了,沒有找到需要修正的地方。");
+              alert(t("AI 檢查完了,沒有找到需要修正的地方。"));
               api.cancelFix(projectId).catch(() => {});
               setFixJob(null);
             }
           } else if (j.status === "error") {
-            alert(`AI 校正失敗:${j.error ?? "未知錯誤"}`);
+            alert(t("AI 校正失敗:{0}", j.error ?? t("未知錯誤")));
             api.cancelFix(projectId).catch(() => {});
             setFixJob(null);
           }
@@ -359,7 +372,7 @@ export default function Editor({ projectId }: { projectId: string }) {
           setTransJob(j);
           mergeTrans();
           if (j.status === "error") {
-            alert(`翻譯失敗:${j.error ?? "未知錯誤"}`);
+            alert(t("翻譯失敗:{0}", j.error ?? t("未知錯誤")));
             setTransJob(null);
           }
         })
@@ -463,7 +476,7 @@ export default function Editor({ projectId }: { projectId: string }) {
             setCuts(c.cuts);
             setCutsStatus("done");
           } else if (c.status === "error") {
-            alert(`切點偵測失敗:${c.error ?? "未知錯誤"}`);
+            alert(t("切點偵測失敗:{0}", c.error ?? t("未知錯誤")));
             setCutsStatus("idle");
           }
         })
@@ -894,10 +907,10 @@ export default function Editor({ projectId }: { projectId: string }) {
       };
     });
     if (!count) {
-      alert(`找不到「${q}」。`);
+      alert(t("找不到「{0}」。", q));
       return;
     }
-    if (!confirm(`把 ${count} 處「${q}」換成「${replaceWith}」?可以 Ctrl+Z 復原。`)) return;
+    if (!confirm(t("把 {0} 處「{1}」換成「{2}」?可以 Ctrl+Z 復原。", count, q, replaceWith))) return;
     setSegments(() => next);
   };
 
@@ -911,7 +924,7 @@ export default function Editor({ projectId }: { projectId: string }) {
     if (
       segmentsRef.current.length > 0 &&
       !confirm(
-        "重新辨識會覆蓋目前的字幕(舊字幕會備份成專案資料夾裡的 subtitles.bak.json)。確定繼續?"
+        t("重新辨識會覆蓋目前的字幕(舊字幕會備份成專案資料夾裡的 subtitles.bak.json)。確定繼續?")
       )
     ) {
       return;
@@ -954,7 +967,7 @@ export default function Editor({ projectId }: { projectId: string }) {
 
   const clearTranslate = () => {
     if (transMenuRef.current) transMenuRef.current.open = false;
-    if (!confirm("清除所有譯文?原文不受影響。")) return;
+    if (!confirm(t("清除所有譯文?原文不受影響。"))) return;
     api
       .clearTranslate(projectId)
       .then(() => {
@@ -965,7 +978,7 @@ export default function Editor({ projectId }: { projectId: string }) {
   };
 
   const cancelFix = () => {
-    if (!confirm("取消這次 AI 校正?")) return;
+    if (!confirm(t("取消這次 AI 校正?"))) return;
     api.cancelFix(projectId).catch(() => {});
     setFixJob(null);
   };
@@ -1057,7 +1070,7 @@ export default function Editor({ projectId }: { projectId: string }) {
         .getBurn(projectId)
         .then((j) => {
           if (j.status === "error") {
-            alert(`匯出失敗:${j.error ?? "未知錯誤"}`);
+            alert(t("匯出失敗:{0}", j.error ?? t("未知錯誤")));
             api.cancelBurn(projectId).catch(() => {});
             setBurnJob(null);
           } else {
@@ -1088,7 +1101,7 @@ export default function Editor({ projectId }: { projectId: string }) {
         setDictEntries(d.entries);
         setDictWrong("");
         setDictRight("");
-        setDictMsg("已加入,之後每次辨識完會自動取代。");
+        setDictMsg(t("已加入,之後每次辨識完會自動取代。"));
       })
       .catch((err: Error) => setDictMsg(err.message));
   };
@@ -1116,20 +1129,38 @@ export default function Editor({ projectId }: { projectId: string }) {
       return t === s.text ? s : { ...s, text: t };
     });
     if (count === 0) {
-      setDictMsg("目前字幕沒有符合詞庫的內容。");
+      setDictMsg(t("目前字幕沒有符合詞庫的內容。"));
       return;
     }
     setSegments(() => next);
-    setDictMsg(`已取代 ${count} 處(可 Ctrl+Z 復原)。`);
+    setDictMsg(t("已取代 {0} 處(可 Ctrl+Z 復原)。", count));
   };
 
   // 用現在的斷句設定把整份字幕重排一次,不必重跑辨識(結果照常進復原堆疊)
+  /** 匯入 SRT/VTT:整份取代目前字幕(可 Ctrl+Z 復原)。
+   *  用在「別的工具已經有字幕了,只想用這裡的編輯器跟燒錄」。 */
+  const importSrt = (file: File) => {
+    file.text().then((text) => {
+      const parsed = parseSrt(text);
+      if (!parsed.length) {
+        alert(t("這個檔案裡沒有讀到字幕。支援 SRT 與 VTT。"));
+        return;
+      }
+      if (
+        segmentsRef.current.length &&
+        !confirm(t("匯入 {0} 句,會整份取代目前的字幕。可以 Ctrl+Z 復原。", parsed.length))
+      )
+        return;
+      setSegments(() => parsed);
+    });
+  };
+
   const resegmentNow = () => {
     if (resegmenting || !segmentsRef.current.length) return;
     // 譯文沒有單字時間戳,跟著原文重排只能整段留在前一句,重排完得再翻一次
     if (
       segmentsRef.current.some((s) => s.trans) &&
-      !confirm("重新斷句會讓譯文對不上原文,之後要重新翻譯一次。要繼續嗎?")
+      !confirm(t("重新斷句會讓譯文對不上原文,之後要重新翻譯一次。要繼續嗎?"))
     )
       return;
     setResegmenting(true);
@@ -1155,8 +1186,8 @@ export default function Editor({ projectId }: { projectId: string }) {
       <div className="page">
         <EditorTopbar project={null} saveState="saved" projectId={projectId} />
         <main className="editor-message">
-          <p>{loadError ?? "載入中…"}</p>
-          {loadError && <a href="#/">回專案列表</a>}
+          <p>{loadError ?? t("載入中…")}</p>
+          {loadError && <a href="#/">{t("回專案列表")}</a>}
         </main>
       </div>
     );
@@ -1213,14 +1244,14 @@ export default function Editor({ projectId }: { projectId: string }) {
           trim={project.trim}
         />
       ) : (
-        <div className="wave-strip wave-loading">波形載入中…</div>
+        <div className="wave-strip wave-loading">{t("波形載入中…")}</div>
       )}
 
       <div className="toolbar">
         <button
           className="play-btn"
           onClick={togglePlay}
-          aria-label={isPlaying ? "暫停" : "播放"}
+          aria-label={isPlaying ? t("暫停") : t("播放")}
         >
           {isPlaying ? (
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
@@ -1253,7 +1284,7 @@ export default function Editor({ projectId }: { projectId: string }) {
           className={"icon-btn" + (waveOpen ? " on" : "")}
           onClick={toggleWave}
           aria-pressed={waveOpen}
-          title={waveOpen ? "收起波形區,字幕列表變長" : "展開波形區"}
+          title={waveOpen ? t("收起波形區,字幕列表變長") : t("展開波形區")}
         >
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
             {[2, 5, 8, 11, 14].map((x, i) => {
@@ -1273,74 +1304,92 @@ export default function Editor({ projectId }: { projectId: string }) {
           </svg>
         </button>
         <span className="toolbar-sep" aria-hidden />
-        <button className="icon-btn" onClick={undo} title="復原 (Ctrl+Z)">
+        <button className="icon-btn" onClick={undo} title={t("復原 (Ctrl+Z)")}>
           ↺
         </button>
-        <button className="icon-btn" onClick={redo} title="重做 (Ctrl+Y)">
+        <button className="icon-btn" onClick={redo} title={t("重做 (Ctrl+Y)")}>
           ↻
         </button>
         <span className="toolbar-spacer" />
         {/* 左邊這組會一次改動全部字幕(所以標成 batch,按下去前要想一下);
             右邊那組只是開面板,按錯了關掉就好。 */}
+        <input
+          ref={srtInputRef}
+          type="file"
+          accept=".srt,.vtt,text/plain"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = ""; // 同一個檔案選第二次也要觸發
+            if (f) importSrt(f);
+          }}
+        />
+        <button
+          className="btn small batch"
+          onClick={() => srtInputRef.current?.click()}
+          title={t("讀進外部的 SRT / VTT 字幕檔,整份取代目前的字幕(可 Ctrl+Z 復原)")}
+        >
+          {t("匯入字幕")}
+        </button>
         <button
           className="btn small batch"
           onClick={resegmentNow}
           disabled={resegmenting || !segments.length}
-          title="照設定裡的每句字數重排全部字幕:碎片黏回完整句子、太長的切開(可 Ctrl+Z 復原)"
+          title={t("照設定裡的每句字數重排全部字幕:碎片黏回完整句子、太長的切開(可 Ctrl+Z 復原)")}
         >
-          {resegmenting ? "重排中…" : "重新斷句"}
+          {resegmenting ? t("重排中…") : t("重新斷句")}
         </button>
         {llmAvailable &&
           languages.length > 0 &&
           (translating ? (
-            <button className="btn small" onClick={cancelTranslate} title="點擊取消">
-              <span className="spinner" aria-hidden /> 翻譯中 {jobPercent(transJob)}%
+            <button className="btn small" onClick={cancelTranslate} title={t("點擊取消")}>
+              <span className="spinner" aria-hidden /> {t("翻譯中")} {jobPercent(transJob)}%
             </button>
           ) : (
             <details className="hotkey-menu" ref={transMenuRef}>
-              <summary className="btn small" title="翻成別的語言,原文與譯文一起顯示/燒錄">
-                翻譯
+              <summary className="btn small" title={t("翻成別的語言,原文與譯文一起顯示/燒錄")}>
+                {t("翻譯")}
               </summary>
               <div className="hotkey-panel trans-panel">
                 {languages.map((lang) => (
                   <button key={lang} className="trans-item" onClick={() => startTranslate(lang)}>
-                    翻成{lang}
+                    {t("翻成")}{lang}
                   </button>
                 ))}
                 <button className="trans-item danger" onClick={clearTranslate}>
-                  清除譯文
+                  {t("清除譯文")}
                 </button>
               </div>
             </details>
           ))}
         {llmAvailable &&
           (fixJob?.status === "running" ? (
-            <button className="btn small" onClick={cancelFix} title="點擊取消">
-              <span className="spinner" aria-hidden /> AI 校正中 {jobPercent(fixJob)}%
+            <button className="btn small" onClick={cancelFix} title={t("點擊取消")}>
+              <span className="spinner" aria-hidden /> {t("AI 校正中")} {jobPercent(fixJob)}%
             </button>
           ) : (
             <button
               className="btn small"
               onClick={startFix}
-              title={`用 ${AI_PROVIDER_LABELS[aiProvider]} 檢查錯字與用語`}
+              title={t("用 {0} 檢查錯字與用語", AI_PROVIDER_LABELS[aiProvider])}
             >
-              AI 校正
+              {t("AI 校正")}
             </button>
           ))}
         <span className="toolbar-sep" aria-hidden />
-        <button className="btn small" onClick={openDict} title="管理錯字自動取代清單">
-          詞庫
+        <button className="btn small" onClick={openDict} title={t("管理錯字自動取代清單")}>
+          {t("詞庫")}
         </button>
         <button
           className={"btn small" + (styleOpen ? " on" : "")}
           onClick={() => setStyleOpen((v) => !v)}
           aria-pressed={styleOpen}
-          title="字型、字級、顏色——影片上即時預覽,燒錄成品用同一組設定"
+          title={t("字型、字級、顏色——影片上即時預覽,燒錄成品用同一組設定")}
         >
-          字幕外觀
+          {t("字幕外觀")}
         </button>
         <details className="hotkey-menu">
-          <summary className="btn small">快捷鍵</summary>
+          <summary className="btn small">{t("快捷鍵")}</summary>
           <div className="hotkey-panel">
             {HOTKEYS.map(([key, desc]) => (
               <div key={key} className="hotkey-row">
@@ -1393,7 +1442,7 @@ export default function Editor({ projectId }: { projectId: string }) {
           </div>
           <div className="player-controls">
             <label className="wave-zoom-label" htmlFor="safeframe-select">
-              安全框
+              {t("安全框")}
             </label>
             <select
               id="safeframe-select"
@@ -1410,7 +1459,22 @@ export default function Editor({ projectId }: { projectId: string }) {
                 </option>
               ))}
             </select>
-            <span className="hint">紅色斜紋是平台 UI 會遮住的區域,字幕壓到就該換行</span>
+            <label className="wave-zoom-label" htmlFor="speed-select">
+              {t("速度")}
+            </label>
+            <select
+              id="speed-select"
+              className="select"
+              value={speed}
+              onChange={(e) => setSpeed(Number(e.target.value))}
+            >
+              {SPEEDS.map((s) => (
+                <option key={s} value={s}>
+                  {s}×
+                </option>
+              ))}
+            </select>
+            <span className="hint">{t("紅色斜紋是平台 UI 會遮住的區域,字幕壓到就該換行")}</span>
           </div>
         </section>
 
@@ -1423,8 +1487,8 @@ export default function Editor({ projectId }: { projectId: string }) {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜尋字幕"
-              aria-label="搜尋字幕"
+              placeholder={t("搜尋字幕")}
+              aria-label={t("搜尋字幕")}
             />
             {query && (
               <>
@@ -1433,14 +1497,14 @@ export default function Editor({ projectId }: { projectId: string }) {
                   className="replace-input"
                   value={replaceWith}
                   onChange={(e) => setReplaceWith(e.target.value)}
-                  placeholder="換成…"
-                  aria-label="取代成"
+                  placeholder={t("換成…")}
+                  aria-label={t("取代成")}
                 />
                 <button className="btn small" onClick={replaceAll}>
-                  全部取代
+                  {t("全部取代")}
                 </button>
                 <button className="link-btn" onClick={() => setQuery("")}>
-                  清除
+                  {t("清除")}
                 </button>
               </>
             )}
@@ -1449,22 +1513,22 @@ export default function Editor({ projectId }: { projectId: string }) {
               className="btn small"
               onClick={gotoNextProblem}
               disabled={!problemCount}
-              title="跳到下一句太快 / 太長 / 空白 / 跟前句重疊的字幕 (N)"
+              title={t("跳到下一句太快 / 太長 / 空白 / 跟前句重疊的字幕 (N)")}
             >
-              {problemCount ? `下一個問題 ${problemCount}` : "沒有問題句"}
+              {problemCount ? t("下一個問題 {0}", problemCount) : t("沒有問題句")}
             </button>
           </div>
 
           <div className="sub-list">
             {segments.length === 0 ? (
               <div className="editor-message">
-                <p>沒有辨識到任何語音。</p>
+                <p>{t("沒有辨識到任何語音。")}</p>
                 <button className="btn" onClick={retranscribe}>
-                  重新辨識
+                  {t("重新辨識")}
                 </button>
               </div>
             ) : rows.length === 0 ? (
-              <p className="empty-hint">沒有符合「{query}」的字幕。</p>
+              <p className="empty-hint">{t("沒有符合「{0}」的字幕。", query)}</p>
             ) : (
               rows.map(({ seg, idx }) => (
                 <Row
@@ -1497,12 +1561,12 @@ export default function Editor({ projectId }: { projectId: string }) {
 
           {selCount > 1 ? (
             <div className="stats-bar">
-              <span>選了 {selCount} 句</span>
+              <span>{t("選了 {0} 句", selCount)}</span>
               <button className="btn small primary" onClick={mergeSelected}>
-                合併成一句 (Ctrl+M)
+                {t("合併成一句 (Ctrl+M)")}
               </button>
               <button className="btn small" onClick={() => selectOnly(selectedIdx)}>
-                取消選取
+                {t("取消選取")}
               </button>
             </div>
           ) : (
@@ -1512,15 +1576,15 @@ export default function Editor({ projectId }: { projectId: string }) {
                 <span className="mono">
                   {formatTimeMs(statSeg.start)} → {formatTimeMs(statSeg.end)}
                 </span>
-                <span>{(statSeg.end - statSeg.start).toFixed(2)} 秒</span>
-                <span>{statSeg.text.replace(/\s/g, "").length} 字</span>
+                <span>{(statSeg.end - statSeg.start).toFixed(2)} {t("秒")}</span>
+                <span>{statSeg.text.replace(/\s/g, "").length} {t("字")}</span>
                 <span className={"speed " + speedLevel(statSeg)}>
-                  {readingSpeed(statSeg).toFixed(1)} 字寬/秒
+                  {readingSpeed(statSeg).toFixed(1)} {t("字寬/秒")}
                   {SPEED_HINT[speedLevel(statSeg)]}
                 </span>
                 {statIdx > 0 && (
                   <span>
-                    與前句間隔 {(statSeg.start - segments[statIdx - 1].end).toFixed(2)} 秒
+                    {t("與前句間隔")} {(statSeg.start - segments[statIdx - 1].end).toFixed(2)} {t("秒")}
                   </span>
                 )}
               </div>
@@ -1538,49 +1602,48 @@ export default function Editor({ projectId }: { projectId: string }) {
       )}
 
       {dictOpen && (
-        <div className="fix-panel" role="dialog" aria-label="詞庫">
+        <div className="fix-panel" role="dialog" aria-label={t("詞庫")}>
           <div className="fix-head">
-            <span className="fix-title">詞庫({dictEntries.length})</span>
+            <span className="fix-title">{t("詞庫({0})", dictEntries.length)}</span>
             <span className="toolbar-spacer" />
             <button
               className="btn small"
               onClick={applyDictNow}
               disabled={!dictEntries.length}
             >
-              套用到目前字幕
+              {t("套用到目前字幕")}
             </button>
             <button className="btn small" onClick={() => setDictOpen(false)}>
-              關閉
+              {t("關閉")}
             </button>
           </div>
           <form className="dict-form" onSubmit={addDictEntry}>
             <input
               value={dictWrong}
               onChange={(e) => setDictWrong(e.target.value)}
-              placeholder="錯誤寫法(例:一加一)"
-              aria-label="錯誤寫法"
+              placeholder={t("錯誤寫法(例:一加一)")}
+              aria-label={t("錯誤寫法")}
             />
             <span className="dict-arrow">→</span>
             <input
               value={dictRight}
               onChange={(e) => setDictRight(e.target.value)}
-              placeholder="正確寫法(例:壹加壹)"
-              aria-label="正確寫法"
+              placeholder={t("正確寫法(例:壹加壹)")}
+              aria-label={t("正確寫法")}
             />
             <button
               className="btn small primary"
               type="submit"
               disabled={!dictWrong.trim() || !dictRight.trim()}
             >
-              加入
+              {t("加入")}
             </button>
           </form>
           {dictMsg && <div className="dict-msg">{dictMsg}</div>}
           <div className="fix-list">
             {dictEntries.length === 0 ? (
               <p className="hint">
-                還沒有詞。加入「錯誤寫法 → 正確寫法」,之後每次辨識完會自動取代;
-                也可以按上面的按鈕套用到目前字幕。
+                {t("還沒有詞。加入「錯誤寫法 → 正確寫法」,之後每次辨識完會自動取代; 也可以按上面的按鈕套用到目前字幕。")}
               </p>
             ) : (
               dictEntries.map((e) => (
@@ -1592,7 +1655,7 @@ export default function Editor({ projectId }: { projectId: string }) {
                   <button
                     className="row-delete visible"
                     onClick={() => removeDictEntry(e.id)}
-                    title="從詞庫刪除"
+                    title={t("從詞庫刪除")}
                   >
                     ✕
                   </button>
@@ -1620,16 +1683,16 @@ export default function Editor({ projectId }: { projectId: string }) {
               <div className="fix-status-head">
                 {burnJob.status === "running" && <span className="spinner" aria-hidden />}
                 <span className="fix-title">
-                  {burnJob.status === "running" ? "匯出影片中" : "影片匯出完成"}
+                  {burnJob.status === "running" ? t("匯出影片中") : t("影片匯出完成")}
                 </span>
                 <span className="toolbar-spacer" />
                 {burnJob.status === "running" ? (
-                  <button className="btn small" onClick={cancelBurn}>取消</button>
+                  <button className="btn small" onClick={cancelBurn}>{t("取消")}</button>
                 ) : (
                   <>
-                    <a className="btn small primary" href={api.burnFileUrl(projectId)}>下載影片</a>
+                    <a className="btn small primary" href={api.burnFileUrl(projectId)}>{t("下載影片")}</a>
                     {/* 只清前端狀態的話,重整又會從後端撈回這張卡,一直賴在畫面右下角 */}
-                    <button className="btn small" onClick={cancelBurn}>關閉</button>
+                    <button className="btn small" onClick={cancelBurn}>{t("關閉")}</button>
                   </>
                 )}
               </div>
@@ -1641,7 +1704,7 @@ export default function Editor({ projectId }: { projectId: string }) {
               </span>
               {burnJob.status === "running" && (
                 <div className="fix-status-info">
-                  {Math.round(burnJob.progress * 100)}% · NVENC 硬體編碼(失敗自動改用 CPU)
+                  {t("{0}% · NVENC 硬體編碼(失敗自動改用 CPU)", Math.round(burnJob.progress * 100))}
                 </div>
               )}
             </div>
@@ -1650,15 +1713,15 @@ export default function Editor({ projectId }: { projectId: string }) {
       )}
 
       {reviewItems && (
-        <div className="fix-panel" role="dialog" aria-label="AI 校正建議">
+        <div className="fix-panel" role="dialog" aria-label={t("AI 校正建議")}>
           <div className="fix-head">
-            <span className="fix-title">AI 校正建議({reviewItems.length})</span>
+            <span className="fix-title">{t("AI 校正建議({0})", reviewItems.length)}</span>
             <span className="toolbar-spacer" />
             <button className="btn small primary" onClick={acceptAll}>
-              全部接受
+              {t("全部接受")}
             </button>
             <button className="btn small" onClick={dismissReview}>
-              關閉
+              {t("關閉")}
             </button>
           </div>
           <div className="fix-list">
@@ -1674,10 +1737,10 @@ export default function Editor({ projectId }: { projectId: string }) {
                   </button>
                   <div className="fix-actions">
                     <button className="btn small primary" onClick={() => acceptOne(s)}>
-                      接受
+                      {t("接受")}
                     </button>
                     <button className="btn small" onClick={() => skipOne(s)}>
-                      略過
+                      {t("略過")}
                     </button>
                   </div>
                 </div>
@@ -1709,27 +1772,29 @@ function AiJobStatus({
   const provider = job.provider ? AI_PROVIDER_LABELS[job.provider] : "AI CLI";
   const translatingJob = kind === "translate" ? (job as TranslateJob) : null;
   const fixingJob = kind === "fix" ? (job as FixJob) : null;
-  const title = kind === "translate" ? "字幕翻譯" : "AI 校正";
+  const title = kind === "translate" ? t("字幕翻譯") : t("AI 校正");
 
   return (
     <div className="fix-status ai-job-status" role="status" aria-live="polite">
       <div className="fix-status-head">
         {job.status === "running" && <span className="spinner" aria-hidden />}
-        <span className="fix-title">{title}{job.status === "done" ? "完成" : "中"}</span>
+        <span className="fix-title">
+          {job.status === "done" ? t("{0}完成", title) : t("{0}中", title)}
+        </span>
         <span className="ai-job-provider">{provider}</span>
         <span className="toolbar-spacer" />
         <strong className="ai-job-percent">{percent}%</strong>
         {job.status === "running" && (
-          <button className="btn small" onClick={onCancel}>取消</button>
+          <button className="btn small" onClick={onCancel}>{t("取消")}</button>
         )}
       </div>
       <span className={"bar fix-status-bar ai-progress-track " + job.status}>
         <span className="bar-fill" style={{ width: `${percent}%` }} />
       </span>
       <div className="fix-status-info">
-        第 {currentBatch}/{total} 批 · {translatingJob
-          ? `翻成${translatingJob.target ?? "目標語言"}`
-          : `已找到 ${fixingJob?.suggestions?.length ?? 0} 個建議`} · {seconds} 秒
+        {t("第 {0}/{1} 批", currentBatch, total)} · {translatingJob
+          ? t("翻成{0}", translatingJob.target ?? t("目標語言"))
+          : t("已找到 {0} 個建議", fixingJob?.suggestions?.length ?? 0)} · {t("{0} 秒", seconds)}
       </div>
     </div>
   );
@@ -1761,14 +1826,14 @@ function TrimControls({
       <button
         className="icon-btn"
         onClick={() => set(currentTime, end)}
-        title="把目前位置設成剪輯起點 (I)"
+        title={t("把目前位置設成剪輯起點 (I)")}
       >
         ⟦
       </button>
       <button
         className="icon-btn"
         onClick={() => set(start, currentTime)}
-        title="把目前位置設成剪輯終點 (O)"
+        title={t("把目前位置設成剪輯終點 (O)")}
       >
         ⟧
       </button>
@@ -1777,16 +1842,16 @@ function TrimControls({
           <button
             className="trim-range mono"
             onClick={() => onSeek(trim.start)}
-            title="跳到剪輯起點"
+            title={t("跳到剪輯起點")}
           >
             {formatTime(trim.start)}–{formatTime(trim.end)}
           </button>
-          <button className="icon-btn" onClick={() => onChange(null)} title="取消剪輯,恢復整支影片">
+          <button className="icon-btn" onClick={() => onChange(null)} title={t("取消剪輯,恢復整支影片")}>
             ✕
           </button>
         </>
       ) : (
-        <span className="trim-hint">整支</span>
+        <span className="trim-hint">{t("整支")}</span>
       )}
     </span>
   );
@@ -1794,11 +1859,11 @@ function TrimControls({
 
 // 辨識的階段順序。status 落在哪一格,前面的就是做完的、後面的是還沒開始的。
 const STAGES: { keys: Project["status"][]; label: string; note: string }[] = [
-  { keys: ["downloading"], label: "下載影片", note: "從網址抓原始檔" },
-  { keys: ["uploaded", "extracting"], label: "抽出聲音", note: "轉成辨識用的音軌" },
-  { keys: ["loading_model"], label: "載入模型", note: "第一次會下載,要幾分鐘" },
-  { keys: ["transcribing"], label: "聽打中", note: "faster-whisper 逐句辨識" },
-  { keys: ["converting"], label: "斷句潤飾", note: "轉繁體、切開太長的句子" },
+  { keys: ["downloading"], label: t("下載影片"), note: t("從網址抓原始檔") },
+  { keys: ["uploaded", "extracting"], label: t("抽出聲音"), note: t("轉成辨識用的音軌") },
+  { keys: ["loading_model"], label: t("載入模型"), note: t("第一次會下載,要幾分鐘") },
+  { keys: ["transcribing"], label: t("聽打中"), note: t("faster-whisper 逐句辨識") },
+  { keys: ["converting"], label: t("斷句潤飾"), note: t("轉繁體、切開太長的句子") },
 ];
 
 function elapsed(sec: number): string {
@@ -1827,17 +1892,17 @@ function ProgressCard({
       <div className="progress-head">
         <span className={"progress-tag" + (failed ? " failed" : "")}>
           <span className="progress-dot" aria-hidden />
-          {failed ? "已中斷" : "製作中"}
+          {failed ? t("已中斷") : t("製作中")}
         </span>
         <span className="progress-elapsed mono">
-          已經 {elapsed((now - since) / 1000)}
+          {t("已經")} {elapsed((now - since) / 1000)}
         </span>
       </div>
-      <h2 className="progress-title">{failed ? statusLabel(project) : "字幕製作中"}</h2>
+      <h2 className="progress-title">{failed ? statusLabel(project) : t("字幕製作中")}</h2>
       <p className="progress-sub">
         {failed
-          ? "從失敗的地方重跑就好,原本的字幕會先備份起來。"
-          : "可以先去做別的事——這頁會自己更新,做完直接進編輯器。"}
+          ? t("從失敗的地方重跑就好,原本的字幕會先備份起來。")
+          : t("可以先去做別的事——這頁會自己更新,做完直接進編輯器。")}
       </p>
 
       <ol className="stage-list">
@@ -1862,12 +1927,12 @@ function ProgressCard({
         </span>
       )}
       {project.device === "cpu" && !failed && (
-        <p className="hint">目前用 CPU 辨識(GPU 未啟用),速度會比較慢。</p>
+        <p className="hint">{t("目前用 CPU 辨識(GPU 未啟用),速度會比較慢。")}</p>
       )}
       {project.error && <p className="error-text">{project.error}</p>}
       {failed && (
         <button className="btn" onClick={onRetry}>
-          重新辨識
+          {t("重新辨識")}
         </button>
       )}
     </div>
@@ -1889,7 +1954,7 @@ function ProjectName({
       <button
         className="topbar-name topbar-name-btn"
         onClick={() => setDraft(project.name)}
-        title="點一下改名"
+        title={t("點一下改名")}
       >
         {project.name}
       </button>
@@ -1934,7 +1999,7 @@ function EditorTopbar({
   const done = project?.status === "done";
   return (
     <header className="topbar">
-      <a className="brand-link" href="#/" title="回專案列表">
+      <a className="brand-link" href="#/" title={t("回專案列表")}>
         <Brand />
       </a>
       {onRename ? (
@@ -1947,11 +2012,11 @@ function EditorTopbar({
           <span className={"save-state save-" + saveState}>{SAVE_LABEL[saveState]}</span>
         )}
         <a className="btn small" href="#/settings">
-          設定
+          {t("設定")}
         </a>
         {done && (
           <details className="export-menu" ref={exportMenuRef}>
-            <summary className="btn primary">匯出</summary>
+            <summary className="btn primary">{t("匯出")}</summary>
             <div className="export-items">
               {EXPORT_FORMATS.map((f) => (
                 <a
@@ -1964,6 +2029,14 @@ function EditorTopbar({
                   {f.label}
                 </a>
               ))}
+              <a
+                href={api.audioFileUrl(projectId)}
+                onClick={() => {
+                  if (exportMenuRef?.current) exportMenuRef.current.open = false;
+                }}
+              >
+                {t("處理後音訊(MP3)")}
+              </a>
               {onBurn && project?.has_video !== false && (
                 <button
                   onClick={() => {
@@ -1971,7 +2044,7 @@ function EditorTopbar({
                     onBurn();
                   }}
                 >
-                  成品影片(燒錄字幕)
+                  {t("成品影片(燒錄字幕)")}
                 </button>
               )}
             </div>
@@ -2055,15 +2128,16 @@ const Row = memo(function Row({
       )}
       <span
         className={"row-count " + speedLevel(seg) + (problem ? " flagged" : "")}
-        title={`${seg.text.replace(/\s/g, "").length} 字 · ${readingSpeed(seg).toFixed(
-          1
-        )} 字寬/秒${problem ? " · " + problem : ""}`}
+        title={
+          t("{0} 字 · {1} 字寬/秒", seg.text.replace(/\s/g, "").length, readingSpeed(seg).toFixed(1)) +
+          (problem ? " · " + problem : "")
+        }
       >
         {seg.text.replace(/\s/g, "").length}
       </span>
       <button
         className="row-delete"
-        title="刪除這句字幕"
+        title={t("刪除這句字幕")}
         onClick={(e) => {
           e.stopPropagation();
           onDelete(index);
@@ -2100,7 +2174,7 @@ function TransInput({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
       }}
-      aria-label="譯文"
+      aria-label={t("譯文")}
     />
   );
 }

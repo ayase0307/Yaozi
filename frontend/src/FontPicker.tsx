@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import type { FontGroup } from "./types";
+import { t } from "./i18n";
 
 /** 字型選單。原本用 <datalist>,Chrome 只有在打字時才掉清單、常常整個不出現,
  *  所以改成自己畫的下拉:一打開就看得到全部字型,而且每個項目用它自己的字型渲染。
@@ -72,7 +73,7 @@ export function useFontGroups(): FontGroup[] {
 export default function FontPicker({
   value,
   onChange,
-  placeholder = "系統預設",
+  placeholder = t("系統預設"),
 }: {
   value: string;
   onChange: (font: string) => void;
@@ -142,8 +143,8 @@ export default function FontPicker({
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜尋字型…"
-            aria-label="搜尋字型"
+            placeholder={t("搜尋字型…")}
+            aria-label={t("搜尋字型")}
           />
           <div className="fontpick-list">
             {placeholder && (
@@ -170,7 +171,7 @@ export default function FontPicker({
                 ))}
               </div>
             ))}
-            {!shown.length && <div className="fontpick-empty">找不到符合的字型</div>}
+            {!shown.length && <div className="fontpick-empty">{t("找不到符合的字型")}</div>}
           </div>
         </div>
       )}

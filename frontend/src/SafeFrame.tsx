@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { t } from "./i18n";
 
 interface SafeZone {
   x: number;
@@ -18,13 +19,13 @@ export interface SafeFramePreset {
 
 // 危險區數值是各平台常見的 UI 遮擋範圍(比例),要微調直接改這裡
 export const SAFE_FRAMES: SafeFramePreset[] = [
-  { key: "off", label: "關閉", ratio: null, zones: [] },
+  { key: "off", label: t("關閉"), ratio: null, zones: [] },
   {
     key: "yt169",
     label: "16:9 YouTube",
     ratio: 16 / 9,
     margin: 0.05,
-    zones: [{ x: 0, y: 0.88, w: 1, h: 0.12, label: "播放器控制列" }],
+    zones: [{ x: 0, y: 0.88, w: 1, h: 0.12, label: t("播放器控制列") }],
   },
   {
     key: "vert916",
@@ -32,18 +33,18 @@ export const SAFE_FRAMES: SafeFramePreset[] = [
     ratio: 9 / 16,
     margin: 0.04,
     zones: [
-      { x: 0, y: 0, w: 1, h: 0.08, label: "頂部 UI" },
-      { x: 0.86, y: 0.3, w: 0.14, h: 0.45, label: "按鈕" },
-      { x: 0, y: 0.78, w: 1, h: 0.22, label: "說明文字與底部 UI" },
+      { x: 0, y: 0, w: 1, h: 0.08, label: t("頂部 UI") },
+      { x: 0.86, y: 0.3, w: 0.14, h: 0.45, label: t("按鈕") },
+      { x: 0, y: 0.78, w: 1, h: 0.22, label: t("說明文字與底部 UI") },
     ],
   },
   { key: "std43", label: "4:3", ratio: 4 / 3, margin: 0.05, zones: [] },
   {
     key: "vert34",
-    label: "3:4 直式貼文",
+    label: t("3:4 直式貼文"),
     ratio: 3 / 4,
     margin: 0.05,
-    zones: [{ x: 0, y: 0.86, w: 1, h: 0.14, label: "底部 UI" }],
+    zones: [{ x: 0, y: 0.86, w: 1, h: 0.14, label: t("底部 UI") }],
   },
 ];
 

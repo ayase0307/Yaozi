@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 export interface Word {
   start: number;
   end: number;
@@ -80,6 +81,18 @@ export interface AsrSettings {
   split_chars: number;
 }
 
+/** 音訊處理設定。全域共用,匯出成品與(選用的)辨識前處理都吃這一份。 */
+export interface AudioSettings {
+  denoise: boolean;
+  denoise_db: number;
+  voice: boolean;
+  normalize: boolean;
+  target_lufs: number;
+  gain_db: number;
+  /** 辨識前也套一次濾鏡;收音很糟的素材才開,乾淨的素材反而會變差。 */
+  pre_asr: boolean;
+}
+
 /** 一個字型家族。name 是選單上顯示的(Windows 給的本地化名稱),
  *  en 是同一個家族的英文名——瀏覽器常常只認得後者,所以兩個都要寫進 font stack。
  *  兩個名字一樣時後端不會回 en。 */
@@ -160,22 +173,22 @@ export const RUNNING_STATUSES: Project["status"][] = [
 export function statusLabel(p: Project): string {
   switch (p.status) {
     case "downloading":
-      return "下載影片中";
+      return t("下載影片中");
     case "uploaded":
-      return "等待辨識";
+      return t("等待辨識");
     case "extracting":
-      return "抽取音軌中";
+      return t("抽取音軌中");
     case "loading_model":
-      return "載入模型中(首次會下載,需要幾分鐘)";
+      return t("載入模型中(首次會下載,需要幾分鐘)");
     case "transcribing":
-      return `辨識中 ${Math.round(p.progress * 100)}%`;
+      return t("辨識中 {0}%", Math.round(p.progress * 100));
     case "converting":
-      return "轉換繁體中";
+      return t("轉換繁體中");
     case "done":
-      return "完成";
+      return t("完成");
     case "error":
-      return "辨識失敗";
+      return t("辨識失敗");
     case "interrupted":
-      return "辨識中斷";
+      return t("辨識中斷");
   }
 }

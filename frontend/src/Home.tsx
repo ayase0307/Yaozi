@@ -3,6 +3,7 @@ import { api, uploadMedia } from "./api";
 import Brand from "./Brand";
 import { RUNNING_STATUSES, statusLabel, type Project } from "./types";
 import { formatTime } from "./segments";
+import { lang, t } from "./i18n";
 
 /** 載不到就自己消失的圖。插圖檔放 frontend/public/art/(不能放 assets,那是 Vite 打包的目錄);
  *  專案縮圖也走這裡——純音檔的 /thumb 會回 404,消失剛好就是要的行為。 */
@@ -87,7 +88,7 @@ export default function Home() {
   };
 
   const deleteProject = (p: Project) => {
-    if (!confirm(`刪除「${p.name}」?專案裡的媒體檔和字幕都會一併刪除。`)) return;
+    if (!confirm(t("刪除「{0}」?專案裡的媒體檔和字幕都會一併刪除。", p.name))) return;
     api.deleteProject(p.id).then(refresh).catch((e: Error) => alert(e.message));
   };
 
@@ -95,10 +96,10 @@ export default function Home() {
     <div className="page">
       <header className="topbar">
         <Brand />
-        <span className="topbar-note">本機字幕工具,檔案不離開你的電腦</span>
+        <span className="topbar-note">{t("本機字幕工具,檔案不離開你的電腦")}</span>
         <span className="topbar-right">
           <a className="btn small" href="#/settings">
-            設定
+            {t("設定")}
           </a>
         </span>
       </header>
@@ -106,8 +107,7 @@ export default function Home() {
       <main className="home">
         {!ffmpegOk && (
           <div className="health-banner">
-            找不到 ffmpeg,辨識和匯出都無法運作——請執行專案資料夾裡的
-            setup.bat 自動安裝,裝完重開伺服器。
+            {t("找不到 ffmpeg,辨識和匯出都無法運作——請執行專案資料夾裡的 setup.bat 自動安裝,裝完重開伺服器。")}
           </div>
         )}
 
@@ -116,13 +116,12 @@ export default function Home() {
         <section className="hero">
           <div className="hero-copy">
             <h1 className="hero-title">
-              打字幕
+              {t("打字幕")}
               <br />
-              不該比剪片久
+              {t("不該比剪片久")}
             </h1>
             <p className="hero-sub">
-              自動聽打、鍵盤校對、匯出 SRT 或直接把字幕燒進成品。
-              全程在這台電腦上跑,不上傳、不需要帳號。
+              {t("自動聽打、鍵盤校對、匯出 SRT 或直接把字幕燒進成品。全程在這台電腦上跑,不上傳、不需要帳號。")}
             </p>
           </div>
           {/* 投放區用「圖片百分比」定位,所以外面這層必須跟圖片一樣的比例,
@@ -144,8 +143,8 @@ export default function Home() {
               }}
               onClick={() => fileInput.current?.click()}
             >
-              <span className="hero-drop-title">把影片或音檔丟進來</span>
-              <span className="hero-drop-sub">或點一下選擇檔案,放開就開始辨識</span>
+              <span className="hero-drop-title">{t("把影片或音檔丟進來")}</span>
+              <span className="hero-drop-sub">{t("或點一下選擇檔案,放開就開始辨識")}</span>
             </button>
             {/* 同一張圖疊在投放區上面,只露出兩隻拳頭 —— 板子就藏到手的後面去了 */}
             <Img src="/art/banner.png" className="hero-fg" />
@@ -166,14 +165,14 @@ export default function Home() {
         {ytOk !== null && (
           <>
             <form className="url-form" onSubmit={submitUrl}>
-              <span className="url-label">或貼網址</span>
+              <span className="url-label">{t("或貼網址")}</span>
               <input
                 className="url-input"
                 type="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://www.youtube.com/watch?v=…"
-                aria-label="影片網址"
+                aria-label={t("影片網址")}
                 disabled={!ytOk}
               />
               <button
@@ -181,14 +180,12 @@ export default function Home() {
                 type="submit"
                 disabled={!ytOk || !url.trim() || urlBusy}
               >
-                {urlBusy ? "讀取中…" : "下載並辨識"}
+                {urlBusy ? t("讀取中…") : t("下載並辨識")}
               </button>
             </form>
             {!ytOk && (
               <p className="url-missing">
-                這台電腦的環境裡沒有 yt-dlp,貼網址下載暫時不能用。跑一次專案資料夾裡的
-                setup.bat 就會補裝(或自己下 <code>.venv\Scripts\pip install yt-dlp</code>),
-                裝完重開伺服器。
+                {t("這台電腦的環境裡沒有 yt-dlp,貼網址下載暫時不能用。跑一次專案資料夾裡的 setup.bat 就會補裝(或自己下")} <code>.venv\Scripts\pip install yt-dlp</code>{t("), 裝完重開伺服器。")}
               </p>
             )}
           </>
@@ -206,7 +203,7 @@ export default function Home() {
                       className="link-btn"
                       onClick={() => setUploads((list) => list.filter((x) => x !== u))}
                     >
-                      知道了
+                      {t("知道了")}
                     </button>
                   </span>
                 ) : (
@@ -214,7 +211,7 @@ export default function Home() {
                     <span className="bar">
                       <span className="bar-fill" style={{ width: `${u.progress * 100}%` }} />
                     </span>
-                    上傳中 {Math.round(u.progress * 100)}%
+                    {t("上傳中")} {Math.round(u.progress * 100)}%
                   </span>
                 )}
               </div>
@@ -223,11 +220,11 @@ export default function Home() {
         )}
 
         {projects === null ? (
-          <p className="empty-hint">載入中…</p>
+          <p className="empty-hint">{t("載入中…")}</p>
         ) : projects.length === 0 && uploads.length === 0 ? (
           <div className="empty-state">
             <Img src="/art/empty.png" className="empty-art" />
-            <p className="empty-hint">還沒有專案。丟一支影片進來,一兩分鐘後就有逐字稿。</p>
+            <p className="empty-hint">{t("還沒有專案。丟一支影片進來,一兩分鐘後就有逐字稿。")}</p>
           </div>
         ) : (
           <section className="project-grid">
@@ -244,8 +241,8 @@ export default function Home() {
                     <span className="mono">
                       {p.duration ? formatTime(p.duration) : "--:--"}
                     </span>
-                    {p.seg_count ? <span className="mono">{p.seg_count} 句</span> : null}
-                    <span>{new Date(p.created_at * 1000).toLocaleDateString("zh-TW")}</span>
+                    {p.seg_count ? <span className="mono">{p.seg_count} {t("句")}</span> : null}
+                    <span>{new Date(p.created_at * 1000).toLocaleDateString(lang)}</span>
                   </div>
                   <div className="project-status">
                     {running && <span className="spinner" aria-hidden />}
@@ -258,7 +255,7 @@ export default function Home() {
                   )}
                   <button
                     className="card-delete"
-                    title="刪除專案"
+                    title={t("刪除專案")}
                     onClick={(e) => {
                       e.preventDefault();
                       deleteProject(p);
@@ -274,19 +271,19 @@ export default function Home() {
 
         <section className="mascot">
           <div className="mascot-copy">
-            <p className="mascot-kicker">全程離線</p>
+            <p className="mascot-kicker">{t("全程離線")}</p>
             <h2 className="mascot-title">
-              你的影片
+              {t("你的影片")}
               <br />
-              不會被餵去訓練誰
+              {t("不會被餵去訓練誰")}
             </h2>
             <p className="mascot-sub">
-              辨識、校對、燒錄都在這台電腦跑完。沒有上傳、沒有帳號、沒有月費。
+              {t("辨識、校對、燒錄都在這台電腦跑完。沒有上傳、沒有帳號、沒有月費。")}
             </p>
             <div className="mascot-tags">
               <span>faster-whisper large-v3</span>
-              <span>本機 GPU 加速</span>
-              <span>檔案留在硬碟裡</span>
+              <span>{t("本機 GPU 加速")}</span>
+              <span>{t("檔案留在硬碟裡")}</span>
             </div>
           </div>
           <Img src="/art/offline.png" className="mascot-art" />

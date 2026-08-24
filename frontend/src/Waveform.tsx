@@ -7,6 +7,7 @@ import {
 } from "react";
 import { formatTime, formatTimeMs } from "./segments";
 import type { Project, Segment } from "./types";
+import { t } from "./i18n";
 
 const RULER_H = 22;
 const STRIP_H = 150;
@@ -423,16 +424,16 @@ export default function Waveform({
               <div className="wave-trim-edge" style={{ left: trim.end * pps + PAD }} />
             </>
           )}
-          {marks.map((t) => (
+          {marks.map((at) => (
             <div
-              key={t}
+              key={at}
               className="wave-mark"
-              style={{ left: t * pps + PAD }}
-              title="雙擊移除這個 Mark 點"
+              style={{ left: at * pps + PAD }}
+              title={t("雙擊移除這個 Mark 點")}
               onPointerDown={(e) => e.stopPropagation()}
               onDoubleClick={(e) => {
                 e.stopPropagation();
-                onRemoveMark(t);
+                onRemoveMark(at);
               }}
             >
               <span className="wave-mark-dot" />
@@ -457,7 +458,7 @@ export default function Waveform({
                 onPointerMove={onBlockPointerMove}
                 onPointerUp={(e) => onBlockPointerUp(e, seg, idx)}
               >
-                <span className="wave-block-label">{seg.text || "(空白)"}</span>
+                <span className="wave-block-label">{seg.text || t("(空白)")}</span>
                 <span
                   className="wave-edge l"
                   onPointerDown={(e) => onBlockPointerDown(e, seg, idx, "l")}
@@ -488,29 +489,29 @@ export default function Waveform({
       <div className="wave-footer">
         {/* 選中句的開始/結束/秒數改由底部狀態列一處負責,這裡不再印第二份 */}
         <span className="wave-seg-info">
-          {sel ? "拖方塊兩端改時間,拖中間整句平移" : "點字幕方塊或列表可選取句子"}
+          {sel ? t("拖方塊兩端改時間,拖中間整句平移") : t("點字幕方塊或列表可選取句子")}
         </span>
         <button
           className="btn small"
           onClick={onDetectCuts}
           disabled={cutsStatus === "running"}
-          title="掃描影片畫面的剪接點,拖字幕邊緣會磁吸過去"
+          title={t("掃描影片畫面的剪接點,拖字幕邊緣會磁吸過去")}
         >
           {cutsStatus === "running"
-            ? "偵測切點中…"
+            ? t("偵測切點中…")
             : cuts.length
-              ? `切點 ${cuts.length}`
-              : "切點偵測"}
+              ? t("切點 {0}", cuts.length)
+              : t("切點偵測")}
         </button>
         <span className="toolbar-spacer" />
-        <span className="wave-zoom-label">縮放</span>
+        <span className="wave-zoom-label">{t("縮放")}</span>
         <input
           type="range"
           min={8}
           max={300}
           value={pps}
           onChange={(e) => setZoom(Number(e.target.value))}
-          aria-label="波形縮放"
+          aria-label={t("波形縮放")}
         />
         <span className="wave-zoom-pct mono">{Math.round((pps / 300) * 100)}%</span>
       </div>

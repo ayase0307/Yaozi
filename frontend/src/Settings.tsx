@@ -6,7 +6,8 @@ import StyleControls from "./StyleControls";
 import { applyUiSize, loadUiSize } from "./UiSize";
 import { loadUiFont, saveUiFont } from "./UiFont";
 import Hint from "./Hint";
-import type { AiProvider, AiStatus, AsrSettings, SubtitleStyle } from "./types";
+import type { AiProvider, AiStatus, AsrSettings, AudioSettings, SubtitleStyle } from "./types";
+import { LANG_NAMES, lang, setLang, t, type Lang } from "./i18n";
 
 /** 設定頁。放的是「跨專案的全域設定」——介面長相、字幕外觀、環境檢查;
  *  只跟單一專案有關的東西(安全框、詞庫套用)留在編輯器裡。 */
@@ -15,6 +16,7 @@ export default function Settings() {
   const [uiSize, setUiSize] = useState(loadUiSize);
   const [style, setStyle] = useState<SubtitleStyle | null>(null);
   const [asr, setAsr] = useState<AsrSettings | null>(null);
+  const [sound, setSound] = useState<AudioSettings | null>(null);
   const [health, setHealth] = useState<{
     ffmpeg: boolean;
     claude: boolean;
@@ -28,8 +30,9 @@ export default function Settings() {
   useEffect(() => {
     api.getStyle().then(setStyle).catch(() => {});
     api.getAsr().then(setAsr).catch(() => {});
+    api.getAudio().then(setSound).catch(() => {});
     api.getHealth().then(setHealth).catch(() => {});
-    api.getAiSettings().then(setAi).catch(() => setAiError("無法讀取 AI 引擎設定"));
+    api.getAiSettings().then(setAi).catch(() => setAiError(t("無法讀取 AI 引擎設定")));
   }, []);
 
   const pickFont = (f: string) => {
@@ -59,24 +62,38 @@ export default function Settings() {
         <a className="brand-link" href="#/">
           <Brand />
         </a>
-        <span className="topbar-name">設定</span>
+        <span className="topbar-name">{t("設定")}</span>
         <span className="topbar-right">
           <a className="btn small" href="#/">
-            回首頁
+            {t("回首頁")}
           </a>
         </span>
       </header>
 
       <main className="settings">
         <section className="settings-card">
-          <h2 className="settings-title">介面</h2>
+          <h2 className="settings-title">{t("介面")}</h2>
           <div className="style-body">
+            <label className="style-row">
+              <span className="style-label">{t("介面語言")}</span>
+              <select
+                className="select"
+                value={lang}
+                onChange={(e) => setLang(e.target.value as Lang)}
+              >
+                {Object.entries(LANG_NAMES).map(([code, name]) => (
+                  <option key={code} value={code}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="style-row">
-              <span className="style-label">介面字型</span>
-              <FontPicker value={uiFont} onChange={pickFont} placeholder="系統預設" />
+              <span className="style-label">{t("介面字型")}</span>
+              <FontPicker value={uiFont} onChange={pickFont} placeholder={t("系統預設")} />
             </div>
             <label className="style-row">
-              <span className="style-label">介面字級</span>
+              <span className="style-label">{t("介面字級")}</span>
               <input
                 type="range"
                 className="style-range"
@@ -92,40 +109,50 @@ export default function Settings() {
               </span>
             </label>
             <Hint>
-              預設是俐方體11號(點陣字型),字級設成 11 的倍數——11、22——筆畫最銳利,
-              其他大小會有點糊。不合胃口就換成系統預設。
+              {t("預設是俐方體11號(點陣字型),字級設成 11 的倍數——11、22——筆畫最銳利, 其他大小會有點糊。不合胃口就換成系統預設。")}
             </Hint>
           </div>
         </section>
 
         <section className="settings-card">
-          <h2 className="settings-title">辨識</h2>
+          <h2 className="settings-title">{t("辨識")}</h2>
           <p className="settings-sub">
-            改完之後,在專案裡按「重新辨識」才會套用到既有字幕。
+            {t("改完之後,在專案裡按「重新辨識」才會套用到既有字幕。")}
           </p>
-          {asr ? <AsrControls value={asr} onChange={setAsr} /> : <p className="hint">載入中…</p>}
+          {asr ? <AsrControls value={asr} onChange={setAsr} /> : <p className="hint">{t("載入中…")}</p>}
         </section>
 
         <section className="settings-card">
-          <h2 className="settings-title">字幕外觀</h2>
+          <h2 className="settings-title">{t("音訊處理")}</h2>
           <p className="settings-sub">
-            這是全域設定,所有專案共用,燒錄成品用的就是這一組。
-            編輯器工具列的「字幕外觀」改的是同一份,在那邊調可以一邊看影片。
+            {t("套用在匯出的成品影片與「下載處理後音訊」上。原始檔不會被改動。")}
           </p>
-          {style ? (
-            <StyleControls value={style} onChange={setStyle} />
+          {sound ? (
+            <AudioControls value={sound} onChange={setSound} />
           ) : (
-            <p className="hint">載入中…</p>
+            <p className="hint">{t("載入中…")}</p>
           )}
         </section>
 
         <section className="settings-card">
-          <h2 className="settings-title">AI 引擎</h2>
+          <h2 className="settings-title">{t("字幕外觀")}</h2>
           <p className="settings-sub">
-            翻譯與 AI 校正共用這個選擇，直接使用你已登入的 CLI，不需要另外填 API key。
+            {t("這是全域設定,所有專案共用,燒錄成品用的就是這一組。編輯器工具列的「字幕外觀」改的是同一份,在那邊調可以一邊看影片。")}
+          </p>
+          {style ? (
+            <StyleControls value={style} onChange={setStyle} />
+          ) : (
+            <p className="hint">{t("載入中…")}</p>
+          )}
+        </section>
+
+        <section className="settings-card">
+          <h2 className="settings-title">{t("AI 引擎")}</h2>
+          <p className="settings-sub">
+            {t("翻譯與 AI 校正共用這個選擇，直接使用你已登入的 CLI，不需要另外填 API key。")}
           </p>
           {ai ? (
-            <div className="ai-provider-list" role="radiogroup" aria-label="AI 引擎">
+            <div className="ai-provider-list" role="radiogroup" aria-label={t("AI 引擎")}>
               {(["claude", "codex"] as const).map((provider) => {
                 const info = ai.providers[provider];
                 const selected = ai.provider === provider;
@@ -146,14 +173,14 @@ export default function Settings() {
                       <span className="ai-provider-name">{info.label}</span>
                       <span className="ai-provider-note">
                         {provider === "claude"
-                          ? "沿用 Claude Code 的訂閱與登入狀態"
-                          : "使用 Codex CLI 的預設模型與登入狀態"}
+                          ? t("沿用 Claude Code 的訂閱與登入狀態")
+                          : t("使用 Codex CLI 的預設模型與登入狀態")}
                       </span>
                     </span>
                     <span
                       className={"ai-provider-state" + (info.available ? " ready" : " missing")}
                     >
-                      {selected && aiSaving ? "切換中" : info.available ? "可使用" : "未安裝"}
+                      {selected && aiSaving ? t("切換中") : info.available ? t("可使用") : t("未安裝")}
                     </span>
                     <span className="ai-provider-radio" aria-hidden />
                   </button>
@@ -161,30 +188,30 @@ export default function Settings() {
               })}
             </div>
           ) : (
-            <div className="ai-provider-loading" aria-label="AI 引擎載入中">
+            <div className="ai-provider-loading" aria-label={t("AI 引擎載入中")}>
               <span />
               <span />
             </div>
           )}
           {aiError && <p className="settings-error" role="alert">{aiError}</p>}
           <p className="settings-sub ai-provider-footnote">
-            切換只影響之後開始的工作；已在執行的翻譯或校正會繼續使用原本的引擎。
+            {t("切換只影響之後開始的工作；已在執行的翻譯或校正會繼續使用原本的引擎。")}
           </p>
         </section>
 
         <section className="settings-card">
-          <h2 className="settings-title">環境</h2>
+          <h2 className="settings-title">{t("環境")}</h2>
           <div className="settings-checks">
-            <Check ok={health?.ffmpeg} label="ffmpeg" note="沒有就無法辨識與匯出,跑 setup.bat 安裝" />
+            <Check ok={health?.ffmpeg} label="ffmpeg" note={t("沒有就無法辨識與匯出,跑 setup.bat 安裝")} />
             <Check
               ok={health?.claude}
               label="Claude Code CLI"
-              note="可作為翻譯與 AI 校正引擎"
+              note={t("可作為翻譯與 AI 校正引擎")}
             />
             <Check
               ok={health?.codex}
               label="Codex CLI"
-              note="可在上方切換成目前的 AI 引擎"
+              note={t("可在上方切換成目前的 AI 引擎")}
             />
           </div>
         </section>
@@ -195,18 +222,18 @@ export default function Settings() {
 
 // 常用語言排前面,其他的照 Whisper 語言代碼直接列。"auto" 是預設。
 const LANGS: [string, string][] = [
-  ["auto", "自動偵測"],
-  ["zh", "中文"],
-  ["ja", "日文"],
-  ["en", "英文"],
-  ["ko", "韓文"],
-  ["yue", "粵語"],
-  ["th", "泰文"],
-  ["vi", "越南文"],
-  ["id", "印尼文"],
-  ["es", "西班牙文"],
-  ["fr", "法文"],
-  ["de", "德文"],
+  ["auto", t("自動偵測")],
+  ["zh", t("中文")],
+  ["ja", t("日文")],
+  ["en", t("英文")],
+  ["ko", t("韓文")],
+  ["yue", t("粵語")],
+  ["th", t("泰文")],
+  ["vi", t("越南文")],
+  ["id", t("印尼文")],
+  ["es", t("西班牙文")],
+  ["fr", t("法文")],
+  ["de", t("德文")],
 ];
 
 /** 辨識設定。這幾個值決定 Whisper 聽到什麼,調錯的話字幕會整段是幻覺。 */
@@ -231,7 +258,7 @@ function AsrControls({
   return (
     <div className="style-body">
       <label className="style-row">
-        <span className="style-label">語言</span>
+        <span className="style-label">{t("語言")}</span>
         <select
           className="select"
           value={value.language}
@@ -245,39 +272,37 @@ function AsrControls({
         </select>
       </label>
       <Hint>
-        鎖成單一語言會準一點,但丟進來的影片如果不是那個語言,Whisper 會硬把聽到的東西
-        當成該語言,整段變成掰出來的句子。不確定就留自動偵測。
+        {t("鎖成單一語言會準一點,但丟進來的影片如果不是那個語言,Whisper 會硬把聽到的東西當成該語言,整段變成掰出來的句子。不確定就留自動偵測。")}
       </Hint>
 
       <div className="style-row style-row-stack">
-        <span className="style-label">提示詞</span>
+        <span className="style-label">{t("提示詞")}</span>
         <textarea
           className="asr-prompt"
           rows={2}
           value={value.prompt}
           onChange={(e) => update({ prompt: e.target.value })}
-          placeholder="人名、專有名詞、歌詞片段…例:防治所、結核病、卡介苗"
+          placeholder={t("人名、專有名詞、歌詞片段…例:防治所、結核病、卡介苗")}
         />
       </div>
       <Hint>
-        先給模型看過的一段文字,難字會聽得比較準。跟詞庫的差別:提示詞影響「聽成什麼」,
-        詞庫是聽完之後才做取代。
+        {t("先給模型看過的一段文字,難字會聽得比較準。跟詞庫的差別:提示詞影響「聽成什麼」, 詞庫是聽完之後才做取代。")}
       </Hint>
 
       <div className="style-row">
-        <span className="style-label">靜音過濾</span>
+        <span className="style-label">{t("靜音過濾")}</span>
         <label className="style-check">
           <input
             type="checkbox"
             checked={value.vad}
             onChange={(e) => update({ vad: e.target.checked })}
           />
-          跳過沒有人聲的片段
+          {t("跳過沒有人聲的片段")}
         </label>
       </div>
       {value.vad && (
         <label className="style-row">
-          <span className="style-label">靈敏度</span>
+          <span className="style-label">{t("靈敏度")}</span>
           <input
             type="range"
             className="style-range"
@@ -291,12 +316,11 @@ function AsrControls({
         </label>
       )}
       <Hint>
-        數字調低會抓到更多小聲、唱歌的段落(也更容易把雜訊當人聲);調高則相反。
-        整支影片只辨識出零星幾句時,先把這個往下調。
+        {t("數字調低會抓到更多小聲、唱歌的段落(也更容易把雜訊當人聲);調高則相反。整支影片只辨識出零星幾句時,先把這個往下調。")}
       </Hint>
 
       <label className="style-row">
-        <span className="style-label">單句上限</span>
+        <span className="style-label">{t("單句上限")}</span>
         <input
           type="range"
           className="style-range"
@@ -307,18 +331,146 @@ function AsrControls({
           onChange={(e) => update({ split_chars: Number(e.target.value) })}
         />
         <span className="style-value mono">
-          {value.split_chars || "不切"}
-          <span className="style-unit">{value.split_chars ? "字" : ""}</span>
+          {value.split_chars || t("不切")}
+          <span className="style-unit">{value.split_chars ? t("字") : ""}</span>
         </span>
       </label>
       <SplitPreview limit={value.split_chars} />
       <Hint>
-        Whisper 給的一段長短完全看它自己高興:安靜一點就斷成兩三個字的碎片,
-        一口氣講完又能吐出兩百字。這裡會把接得上的碎片黏回完整句子,再把過長的切開,
-        優先斷在標點、其次斷在換氣的停頓。算的是中文字,英文一個字母算半個
-        ——{value.split_chars || 0} 中文字 = {(value.split_chars || 0) * 2} 個英文字母。
-        跟「每行字數」不一樣:那個只是把同一句折行,這個是真的切成兩句、各有自己的時間軸。
-        改完在編輯器按「重新斷句」就能套到現有字幕,不用重跑辨識。
+        {t("Whisper 給的一段長短完全看它自己高興:安靜一點就斷成兩三個字的碎片, 一口氣講完又能吐出兩百字。這裡會把接得上的碎片黏回完整句子,再把過長的切開, 優先斷在標點、其次斷在換氣的停頓。算的是中文字,英文一個字母算半個 ——")}{value.split_chars || 0} {t("中文字 =")} {(value.split_chars || 0) * 2} {t("個英文字母。跟「每行字數」不一樣:那個只是把同一句折行,這個是真的切成兩句、各有自己的時間軸。改完在編輯器按「重新斷句」就能套到現有字幕,不用重跑辨識。")}
+      </Hint>
+    </div>
+  );
+}
+
+/** 音訊處理。每一項都是一段 ffmpeg 濾鏡,順序由後端固定
+ *  (去噪 → 人聲頻段 → 響度 → 增益),這裡只負責開關與強度。 */
+function AudioControls({
+  value,
+  onChange,
+}: {
+  value: AudioSettings;
+  onChange: (s: AudioSettings) => void;
+}) {
+  const timer = useRef<number | undefined>(undefined);
+
+  const update = (patch: Partial<AudioSettings>) => {
+    const next = { ...value, ...patch };
+    onChange(next);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => api.saveAudio(next).catch(() => {}), 400);
+  };
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  return (
+    <div className="style-body">
+      <div className="style-row">
+        <span className="style-label">{t("降噪")}</span>
+        <label className="style-check">
+          <input
+            type="checkbox"
+            checked={value.denoise}
+            onChange={(e) => update({ denoise: e.target.checked })}
+          />
+          {t("壓掉冷氣、風扇那種持續底噪")}
+        </label>
+      </div>
+      {value.denoise && (
+        <label className="style-row">
+          <span className="style-label">{t("降噪強度")}</span>
+          <input
+            type="range"
+            className="style-range"
+            min={1}
+            max={60}
+            step={1}
+            value={value.denoise_db}
+            onChange={(e) => update({ denoise_db: Number(e.target.value) })}
+          />
+          <span className="style-value mono">
+            {value.denoise_db}
+            <span className="style-unit">dB</span>
+          </span>
+        </label>
+      )}
+      <Hint>{t("調太大人聲會變悶、出現水聲般的殘響,先從 12 dB 附近試。")}</Hint>
+
+      <div className="style-row">
+        <span className="style-label">{t("人聲頻段")}</span>
+        <label className="style-check">
+          <input
+            type="checkbox"
+            checked={value.voice}
+            onChange={(e) => update({ voice: e.target.checked })}
+          />
+          {t("只留 80Hz~8kHz,砍掉低頻隆隆聲與嘶聲")}
+        </label>
+      </div>
+
+      <div className="style-row">
+        <span className="style-label">{t("響度標準化")}</span>
+        <label className="style-check">
+          <input
+            type="checkbox"
+            checked={value.normalize}
+            onChange={(e) => update({ normalize: e.target.checked })}
+          />
+          {t("整支拉到同一個響度(EBU R128)")}
+        </label>
+      </div>
+      {value.normalize && (
+        <label className="style-row">
+          <span className="style-label">{t("目標響度")}</span>
+          <input
+            type="range"
+            className="style-range"
+            min={-30}
+            max={-8}
+            step={1}
+            value={value.target_lufs}
+            onChange={(e) => update({ target_lufs: Number(e.target.value) })}
+          />
+          <span className="style-value mono">
+            {value.target_lufs}
+            <span className="style-unit">LUFS</span>
+          </span>
+        </label>
+      )}
+      <Hint>{t("-16 LUFS 是串流平台常見值,想再響一點就往 -14 調。")}</Hint>
+
+      <label className="style-row">
+        <span className="style-label">{t("音量增益")}</span>
+        <input
+          type="range"
+          className="style-range"
+          min={-20}
+          max={20}
+          step={1}
+          value={value.gain_db}
+          onChange={(e) => update({ gain_db: Number(e.target.value) })}
+        />
+        <span className="style-value mono">
+          {value.gain_db > 0 ? "+" : ""}
+          {value.gain_db}
+          <span className="style-unit">dB</span>
+        </span>
+      </label>
+      <Hint>{t("單純想大聲一點用這個。開了響度標準化的話,通常留 0 就好。")}</Hint>
+
+      <div className="style-row">
+        <span className="style-label">{t("辨識前處理")}</span>
+        <label className="style-check">
+          <input
+            type="checkbox"
+            checked={value.pre_asr}
+            onChange={(e) => update({ pre_asr: e.target.checked })}
+          />
+          {t("辨識前先套一次上面的處理")}
+        </label>
+      </div>
+      <Hint>
+        {t("只在收音很糟(風聲、電流聲蓋過人聲)時才建議打開;乾淨的素材處理過反而更容易聽錯。改完要按「重新辨識」才會生效。")}
       </Hint>
     </div>
   );
@@ -326,8 +478,8 @@ function AsrControls({
 
 // 預覽用的樣本:前半段沒標點只有停頓,後半段有標點,兩種斷法一次看得到
 const SAMPLE =
-  "今天要跟大家介紹的是這台機器的操作流程首先把電源打開然後確認指示燈有沒有亮起來" +
-  "接著選擇你要的模式,如果不確定就先用預設值,最後按下開始就可以了";
+  t("今天要跟大家介紹的是這台機器的操作流程首先把電源打開然後確認指示燈有沒有亮起來") +
+  t("接著選擇你要的模式,如果不確定就先用預設值,最後按下開始就可以了");
 
 // 後端沒有單字時間戳就不敢切(切了時間軸會錯位),所以樣本要自己配一份:
 // 每個字平均攤在 18 秒裡,切點就純粹由標點跟長度決定。
@@ -361,7 +513,7 @@ function SplitPreview({ limit }: { limit: number }) {
   if (!lines.length) return null;
   return (
     <div className="split-preview">
-      <span className="split-preview-label">會切成這樣</span>
+      <span className="split-preview-label">{t("會切成這樣")}</span>
       {lines.map((t, i) => (
         <span key={i} className="split-preview-line">
           {t}
@@ -376,7 +528,7 @@ function Check({ ok, label, note }: { ok?: boolean; label: string; note: string 
     <div className="settings-check">
       <span className={"settings-dot" + (ok ? " on" : ok === false ? " off" : "")} aria-hidden />
       <span className="settings-check-name">{label}</span>
-      <span className="settings-check-note">{ok === undefined ? "檢查中…" : note}</span>
+      <span className="settings-check-note">{ok === undefined ? t("檢查中…") : note}</span>
     </div>
   );
 }

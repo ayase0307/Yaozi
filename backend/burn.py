@@ -10,7 +10,7 @@ import subprocess
 import threading
 import traceback
 
-from . import config, exporter, storage, style
+from . import audio, config, exporter, storage, style
 
 OUT_NAME = "export.mp4"
 
@@ -98,16 +98,22 @@ def start(pid: str) -> dict:
     if trim:
         duration = trim["end"] - trim["start"]
     threading.Thread(
-        target=_run, args=(pid, d, meta["media_file"], duration, trim, job), daemon=True
+        target=_run,
+        args=(pid, d, meta["media_file"], duration, trim, job, audio.filter_chain()),
+        daemon=True,
     ).start()
     return get_state(pid)
 
 
-def _run(pid: str, d, media_name: str, duration: float, trim: dict | None, job: dict) -> None:
+def _run(
+    pid: str, d, media_name: str, duration: float, trim: dict | None, job: dict, afilter: str = ""
+) -> None:
     err_file = d / "burn_err.txt"
     try:
         last_err = ""
-        for vcodec, acodec in ATTEMPTS:
+        # 有音訊濾鏡就不能直接複製音軌,第一個組合跳過
+        attempts = [a for a in ATTEMPTS if not (afilter and a[1] == "copy")]
+        for vcodec, acodec in attempts:
             if job["cancel"]:
                 job["status"] = "canceled"
                 return
@@ -121,6 +127,8 @@ def _run(pid: str, d, media_name: str, duration: float, trim: dict | None, job: 
                 args += ["-preset", "p5", "-cq", "19"]
             else:
                 args += ["-preset", "medium", "-crf", "19"]
+            if afilter:
+                args += ["-af", afilter]
             args += ["-c:a", acodec]
             if acodec == "aac":
                 args += ["-b:a", "192k"]

@@ -2,7 +2,7 @@
  * 字幕邏輯的自我檢查。跑法:`npm run selfcheck`(Node 24 直接吃 TS)。
  * 只測會算錯又看不出來的那幾條:合併的接縫、閱讀速度、問題判定。
  */
-import { mergeSegments, readingSpeed, segmentProblem, textWidth } from "./segments.ts";
+import { mergeSegments, parseSrt, readingSpeed, segmentProblem, textWidth } from "./segments.ts";
 import type { Segment } from "./types.ts";
 
 // 自己寫兩行,免得為了跑一個檢查去裝 @types/node
@@ -49,5 +49,18 @@ assert.ok(segmentProblem(list, 2).includes("空"));
 assert.ok(segmentProblem([seg(0, 1, "一二三四五六七八九十")], 0).includes("快"));
 // 唱歌拉長音:字少秒數長,不該被當成問題
 assert.equal(segmentProblem([seg(0, 10.9, "好きなものを持ちつつ")], 0), "");
+
+// SRT 匯入:逗號毫秒、VTT 的點毫秒、多行內文、缺毫秒位數都要吃得下
+const srt = parseSrt(
+  "WEBVTT\n\n1\n00:00:01,000 --> 00:00:02,500\n第一句\n\n" +
+    "2\n00:00:02.500 --> 00:01:00.08\n第二句上半\n第二句下半\n\n" +
+    "3\n00:00:05,000 --> 00:00:05,000\n時間反了的不要\n"
+);
+assert.equal(srt.length, 2);
+assert.equal(srt[0].start, 1);
+assert.equal(srt[0].end, 2.5);
+assert.equal(srt[1].text, "第二句上半 第二句下半");
+assert.equal(srt[1].end, 60.08);
+assert.equal(parseSrt("這不是字幕檔").length, 0);
 
 console.log("segments selfcheck ok");

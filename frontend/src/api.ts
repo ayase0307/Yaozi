@@ -1,5 +1,6 @@
 import type {
   AsrSettings,
+  AudioSettings,
   AiProvider,
   AiStatus,
   BurnJob,
@@ -11,16 +12,20 @@ import type {
   SubtitleStyle,
   TranslateJob,
 } from "./types";
+import { t } from "./i18n";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText;
     try {
-      detail = (await res.json()).detail ?? detail;
+      const d = (await res.json()).detail;
+      // FastAPI 的 422 會回一個 list,直接丟進 Error 會變成 [object Object]
+      if (typeof d === "string") detail = d;
+      else if (d) detail = JSON.stringify(d);
     } catch {
       /* keep statusText */
     }
-    throw new Error(detail);
+    throw new Error(t(detail));
   }
   return res.json();
 }
@@ -121,6 +126,17 @@ export const api = {
       body: JSON.stringify(s),
     }).then((r) => json<AsrSettings>(r)),
 
+  getAudio: () => fetch("/api/audio").then((r) => json<AudioSettings>(r)),
+
+  saveAudio: (s: AudioSettings) =>
+    fetch("/api/audio", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(s),
+    }).then((r) => json<AudioSettings>(r)),
+
+  audioFileUrl: (pid: string) => `/api/projects/${pid}/audio/file`,
+
   getLlmStatus: () =>
     fetch("/api/llm/status").then((r) =>
       json<AiStatus & { languages: string[]; yt_dlp: boolean }>(r)
@@ -209,16 +225,17 @@ export function uploadMedia(
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(JSON.parse(xhr.responseText));
       } else {
-        let msg = `上傳失敗(${xhr.status})`;
+        let msg = t("上傳失敗({0})", xhr.status);
         try {
-          msg = JSON.parse(xhr.responseText).detail ?? msg;
+          const d = JSON.parse(xhr.responseText).detail;
+          if (typeof d === "string") msg = t(d);
         } catch {
           /* keep default */
         }
         reject(new Error(msg));
       }
     };
-    xhr.onerror = () => reject(new Error("連不上伺服器"));
+    xhr.onerror = () => reject(new Error(t("連不上伺服器")));
     const form = new FormData();
     form.append("file", file);
     xhr.send(form);

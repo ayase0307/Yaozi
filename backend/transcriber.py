@@ -8,7 +8,7 @@ import unicodedata
 import uuid
 from difflib import SequenceMatcher
 
-from . import asr, config, storage
+from . import asr, audio, config, storage
 
 # Whisper 訓練資料裡混進了大量字幕組水印,聽不到人聲時就會把這些整句吐出來。
 # 只列真人講話幾乎不可能講的字串,免得誤刪正常字幕。
@@ -67,10 +67,15 @@ def _probe(media) -> tuple[float, bool]:
 
 
 def _extract_audio(media, wav) -> None:
+    args = [config.FFMPEG, "-y", "-v", "error", "-i", str(media), "-vn"]
+    cfg = audio.load()
+    if cfg["pre_asr"]:
+        chain = audio.filter_chain(cfg)
+        if chain:
+            args += ["-af", chain]
+    args += ["-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(wav)]
     out = subprocess.run(
-        [config.FFMPEG, "-y", "-v", "error", "-i", str(media),
-         "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(wav)],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        args, capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     if out.returncode != 0:
         raise RuntimeError(f"ffmpeg 抽取音軌失敗:{out.stderr.strip()[-300:]}")
