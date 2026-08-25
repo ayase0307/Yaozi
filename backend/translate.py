@@ -68,7 +68,7 @@ def _public(job: dict | None) -> dict:
         return {"status": "idle"}
     state = {
         k: job[k]
-        for k in ("status", "total", "done", "target", "error", "started_at", "provider")
+        for k in ("status", "total", "done", "target", "mode", "error", "started_at", "provider")
     }
     state["progress"] = 1.0 if job["status"] == "done" else job["done"] / max(job["total"], 1)
     return state
@@ -83,6 +83,7 @@ def get_state(pid: str) -> dict:
         with _file(pid).open("r", encoding="utf-8") as f:
             state = json.load(f)
         state.setdefault("provider", llm.load_settings()["provider"])
+        state.setdefault("mode", "bilingual")
         total = max(int(state.get("total") or 1), 1)
         state.setdefault(
             "progress",
@@ -113,7 +114,7 @@ def clear(pid: str) -> dict:
     return {"status": "idle"}
 
 
-def start(pid: str, target: str) -> dict:
+def start(pid: str, target: str, mode: str = "bilingual") -> dict:
     provider = llm.load_settings()["provider"]
     cmd = llm.find_provider(provider)
     if cmd is None:
@@ -122,6 +123,8 @@ def start(pid: str, target: str) -> dict:
         )
     if target not in LANGUAGES:
         raise RuntimeError(f"不支援的語言:{target}")
+    if mode not in ("bilingual", "replace"):
+        raise RuntimeError("不支援的翻譯模式")
     segments = storage.load_subtitles(pid)["segments"]
     if not segments:
         raise RuntimeError("這個專案還沒有字幕")
@@ -143,6 +146,7 @@ def start(pid: str, target: str) -> dict:
         "total": len(batches),
         "done": 0,
         "target": target,
+        "mode": mode,
         "error": None,
         "started_at": time.time(),
         "cancel": False,
@@ -202,6 +206,7 @@ def _run(
     job: dict,
 ) -> None:
     try:
+        replacements: dict[str, str] = {}
         for indices in batches:
             if job["cancel"]:
                 job["status"] = "canceled"
@@ -210,12 +215,27 @@ def _run(
             data = storage.load_subtitles(pid)
             segments = data["segments"]
             got = _run_batch(provider, cmd, segments, indices, job["target"])
-            for i, text in got.items():
-                if i < len(segments):
-                    segments[i]["trans"] = text
-            storage.save_subtitles(pid, data)
+            if job["mode"] == "replace":
+                # 取代模式最後才一次提交，避免翻到一半失敗造成半份原文被換掉。
+                for i, text in got.items():
+                    if i < len(segments):
+                        replacements[segments[i]["id"]] = text
+            else:
+                for i, text in got.items():
+                    if i < len(segments):
+                        segments[i]["trans"] = text
+                storage.save_subtitles(pid, data)
             with _lock:
                 job["done"] += 1
+        if job["mode"] == "replace":
+            data = storage.load_subtitles(pid)
+            storage.backup_subtitles(pid)
+            for segment in data["segments"]:
+                translated = replacements.get(segment.get("id"))
+                if translated:
+                    segment["text"] = translated
+                    segment.pop("trans", None)
+            storage.save_subtitles(pid, data)
         job["status"] = "done"
     except Exception as e:
         traceback.print_exc()

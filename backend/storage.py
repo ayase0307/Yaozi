@@ -6,7 +6,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import config
+from . import config, timeline
 
 RUNNING_STATUSES = {"downloading", "extracting", "loading_model", "transcribing", "converting"}
 
@@ -61,6 +61,8 @@ def create_project(display_name: str, media_suffix: str) -> dict:
         "device": None,
         # 剪輯範圍 {"start": 秒, "end": 秒};None = 整支影片
         "trim": None,
+        # 非破壞式剪除的中間區段；來源時間不變，匯出時再拼接保留範圍
+        "omit_ranges": [],
     }
     save_project(meta)
     return meta
@@ -104,6 +106,16 @@ def apply_trim(segments: list[dict], trim: dict | None) -> list[dict]:
     return out
 
 
+def apply_edits(segments: list[dict], meta: dict) -> list[dict]:
+    """套用頭尾裁切與多段中間剪除，回傳輸出時間軸上的字幕。"""
+    return timeline.apply_edits(
+        segments,
+        float(meta.get("duration") or 0),
+        meta.get("trim"),
+        meta.get("omit_ranges") or [],
+    )
+
+
 def load_project(pid: str) -> dict | None:
     if not pid or "/" in pid or "\\" in pid or ".." in pid:
         return None
@@ -111,6 +123,7 @@ def load_project(pid: str) -> dict | None:
     # 加剪輯功能之前建的專案沒有這個欄位,補上才不用寫 migration
     if meta is not None:
         meta.setdefault("trim", None)
+        meta.setdefault("omit_ranges", [])
     return meta
 
 

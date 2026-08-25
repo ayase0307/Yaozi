@@ -40,6 +40,8 @@ export interface Project {
   device: string | null;
   /** 剪輯範圍(秒)。null = 整支影片。燒錄與匯出字幕都只出這一段。 */
   trim: { start: number; end: number } | null;
+  /** 從來源影片中剪除的任意中間區段；匯出時會把保留片段重新拼接。 */
+  omit_ranges: { start: number; end: number }[];
 }
 
 /** 字幕外觀。size / outline / bottom 都是「佔畫面高度的百分比」,換解析度不用重設。 */
@@ -148,10 +150,30 @@ export interface TranslateJob {
   total?: number;
   done?: number;
   target?: string;
+  mode?: "bilingual" | "replace";
   error?: string | null;
   started_at?: number;
   progress?: number;
   provider?: AiProvider;
+}
+
+export interface OcrOptions {
+  crop_top: number;
+  crop_bottom: number;
+  sample_rate: number;
+  layout: "auto" | "single" | "bilingual_top" | "bilingual_bottom";
+  use_trim: boolean;
+}
+
+export interface OcrJob {
+  status: "idle" | "running" | "done" | "error" | "canceled";
+  progress: number;
+  processed?: number;
+  total?: number;
+  segments?: number;
+  error: string | null;
+  started_at?: number;
+  options?: OcrOptions;
 }
 
 export interface BurnJob {

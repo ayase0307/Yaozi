@@ -35,6 +35,8 @@ interface WaveformProps {
   onCreate: (start: number, end: number) => void;
   /** 剪輯範圍,範圍外的部分畫成灰的。null = 整支影片。 */
   trim: Project["trim"];
+  /** 要從成品移除的中間區段。 */
+  omitRanges: Project["omit_ranges"];
 }
 
 interface DragState {
@@ -76,6 +78,7 @@ export default function Waveform({
   onCommitTimes,
   onCreate,
   trim,
+  omitRanges,
 }: WaveformProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -86,8 +89,14 @@ export default function Waveform({
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const [createGhost, setCreateGhost] = useState<{ a: number; b: number } | null>(null);
+  const [timeDraft, setTimeDraft] = useState(() => currentTime.toFixed(3));
+  const timeInputFocused = useRef(false);
   const createRef = useRef<{ t0: number; x0: number; active: boolean } | null>(null);
   const hoverRaf = useRef(0);
+
+  useEffect(() => {
+    if (!timeInputFocused.current) setTimeDraft(currentTime.toFixed(3));
+  }, [currentTime]);
 
   const maxPeak = useMemo(() => {
     let m = 0;
@@ -313,11 +322,16 @@ export default function Waveform({
         onCommitTimes(d.id, d.cur.start, d.cur.end);
       } else {
         onSelect(idx);
-        onSeek(seg.start);
+        // 字幕方塊幾乎蓋滿整條時間軸；點擊時要取游標所在時間，不能強制跳句首。
+        const rect = innerRef.current?.getBoundingClientRect();
+        const at = rect
+          ? Math.min(Math.max((e.clientX - rect.left - PAD) / pps, 0), duration)
+          : seg.start;
+        onSeek(at);
       }
       e.stopPropagation();
     },
-    [onCommitTimes, onSelect, onSeek]
+    [duration, onCommitTimes, onSelect, onSeek, pps]
   );
 
   // ---- 空白區:點=跳播、拖=新增、hover=跟播 ----
@@ -424,6 +438,23 @@ export default function Waveform({
               <div className="wave-trim-edge" style={{ left: trim.end * pps + PAD }} />
             </>
           )}
+          {omitRanges.map((range, index) => (
+            <div
+              key={`${range.start}-${range.end}-${index}`}
+              className="wave-omit"
+              style={{
+                left: range.start * pps + PAD,
+                width: Math.max((range.end - range.start) * pps, 3),
+              }}
+              title={t(
+                "成品會剪掉 {0}–{1}",
+                formatTimeMs(range.start),
+                formatTimeMs(range.end)
+              )}
+            >
+              <span>{t("剪除")}</span>
+            </div>
+          ))}
           {marks.map((at) => (
             <div
               key={at}
@@ -503,6 +534,41 @@ export default function Waveform({
               ? t("切點 {0}", cuts.length)
               : t("切點偵測")}
         </button>
+        <label className="wave-position-control">
+          <span>播放位置</span>
+          <input
+            className="wave-time-number mono"
+            type="number"
+            min={0}
+            max={duration}
+            step={0.1}
+            value={timeDraft}
+            aria-label="播放位置（秒）"
+            onFocus={() => {
+              timeInputFocused.current = true;
+            }}
+            onChange={(event) => {
+              setTimeDraft(event.target.value);
+              const value = Number(event.target.value);
+              if (Number.isFinite(value)) onSeek(Math.min(Math.max(value, 0), duration));
+            }}
+            onBlur={() => {
+              timeInputFocused.current = false;
+              setTimeDraft(currentTime.toFixed(3));
+            }}
+          />
+          <span className="wave-seconds">秒</span>
+        </label>
+        <input
+          className="wave-scrubber"
+          type="range"
+          min={0}
+          max={duration}
+          step={0.01}
+          value={currentTime}
+          aria-label="播放位置滑桿"
+          onChange={(event) => onSeek(Number(event.target.value))}
+        />
         <span className="toolbar-spacer" />
         <span className="wave-zoom-label">{t("縮放")}</span>
         <input

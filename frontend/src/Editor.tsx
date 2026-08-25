@@ -6,9 +6,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { api } from "./api";
 import Brand from "./Brand";
 import { useHistoryState } from "./history";
+import OcrPanel from "./OcrPanel";
+import ProblemPanel, { type ProblemItem } from "./ProblemPanel";
 import {
   activeIndexAt,
   formatTime,
@@ -17,7 +20,7 @@ import {
   parseSrt,
   readingSpeed,
   speedLevel,
-  segmentProblem,
+  segmentProblemInfo,
   splitSegment,
   splitSegmentAtTime,
   uid,
@@ -34,6 +37,8 @@ import {
   type DictEntry,
   type FixJob,
   type FixSuggestion,
+  type OcrJob,
+  type OcrOptions,
   type Project,
   type Segment,
   type SubtitleStyle,
@@ -65,6 +70,8 @@ const HOTKEYS: [string, string][] = [
   ["Enter", t("在游標處斷句")],
   ["Backspace", t("句首按下與上句合併")],
   ["Tab / Shift+Tab", t("跳到下一句 / 上一句")],
+  ["R", t("重播目前選取的句子")],
+  ["L", t("循環 / 取消循環目前句")],
   [t("空白鍵"), t("播放 / 暫停")],
   ["↑ ↓", t("選句並跳到該時間")],
   ["B", t("在播放位置切開字幕")],
@@ -132,11 +139,22 @@ export default function Editor({ projectId }: { projectId: string }) {
   anchorIdxRef.current = anchorIdx;
   const [query, setQuery] = useState("");
   const [replaceWith, setReplaceWith] = useState("");
+  const [focusedTransId, setFocusedTransId] = useState<string | null>(null);
+  const [problemOpen, setProblemOpen] = useState(false);
+  const [pendingReveal, setPendingReveal] = useState<{
+    index: number;
+    align: "auto" | "center";
+    token: number;
+  } | null>(null);
+  const revealTokenRef = useRef(0);
 
   const [llmAvailable, setLlmAvailable] = useState(false);
   const [aiProvider, setAiProvider] = useState<AiProvider>("claude");
   const [languages, setLanguages] = useState<string[]>([]);
   const [transJob, setTransJob] = useState<TranslateJob | null>(null);
+  const [translateMode, setTranslateMode] = useState<"bilingual" | "replace">(() =>
+    localStorage.getItem("yaozi:translate-mode") === "replace" ? "replace" : "bilingual"
+  );
   const translating = transJob?.status === "running";
   const translatingRef = useRef(translating);
   translatingRef.current = translating;
@@ -158,9 +176,29 @@ export default function Editor({ projectId }: { projectId: string }) {
   const [dictWrong, setDictWrong] = useState("");
   const [dictRight, setDictRight] = useState("");
   const [dictMsg, setDictMsg] = useState("");
+  const [ocrOpen, setOcrOpen] = useState(false);
+  const [ocrJob, setOcrJob] = useState<OcrJob | null>(null);
+  const ocrRunning = ocrJob?.status === "running";
+  const ocrRunningRef = useRef(ocrRunning);
+  ocrRunningRef.current = ocrRunning;
+  const [ocrOptions, setOcrOptions] = useState<OcrOptions>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("yaozi:ocr-options") || "null");
+      if (stored) return stored;
+    } catch {
+      /* use defaults */
+    }
+    return { crop_top: 0.45, crop_bottom: 0.98, sample_rate: 2, layout: "auto", use_trim: true };
+  });
+  const [omitStart, setOmitStart] = useState<number | null>(null);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [loopSentence, setLoopSentence] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(() => {
+    const stored = Number(localStorage.getItem("yaozi:playback-rate"));
+    return [0.75, 1, 1.25, 1.5, 2].includes(stored) ? stored : 1;
+  });
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const saveStateRef = useRef(saveState);
   saveStateRef.current = saveState;
@@ -171,7 +209,7 @@ export default function Editor({ projectId }: { projectId: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   // 影片要 status === "done" 才會出現在畫面上,rect 得等到那時候才算得出來
   const videoRect = useVideoRect(videoRef, project?.status === "done");
-  const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const subListRef = useRef<HTMLDivElement>(null);
   const loadedRef = useRef(false);
   const justLoadedRef = useRef<Segment[] | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
@@ -197,6 +235,14 @@ export default function Editor({ projectId }: { projectId: string }) {
     (trim: Project["trim"]) => {
       setProject((p) => (p ? { ...p, trim } : p));
       api.patchProject(projectId, { trim }).then(setProject).catch(() => {});
+    },
+    [projectId]
+  );
+
+  const setOmitRanges = useCallback(
+    (omit_ranges: Project["omit_ranges"]) => {
+      setProject((p) => (p ? { ...p, omit_ranges } : p));
+      api.patchProject(projectId, { omit_ranges }).then(setProject).catch(() => {});
     },
     [projectId]
   );
@@ -271,10 +317,28 @@ export default function Editor({ projectId }: { projectId: string }) {
         if (alive && j.status === "running") setTransJob(j);
       })
       .catch(() => {});
+    api
+      .getOcr(projectId)
+      .then((j) => {
+        if (alive && j.status === "running") {
+          setOcrJob(j);
+          if (j.options) setOcrOptions(j.options);
+          setOcrOpen(true);
+        }
+      })
+      .catch(() => {});
     return () => {
       alive = false;
     };
   }, [project?.status, projectId]);
+
+  useEffect(() => {
+    localStorage.setItem("yaozi:translate-mode", translateMode);
+  }, [translateMode]);
+
+  useEffect(() => {
+    localStorage.setItem("yaozi:ocr-options", JSON.stringify(ocrOptions));
+  }, [ocrOptions]);
 
   // 波形資料(完成後載入)
   useEffect(() => {
@@ -341,18 +405,22 @@ export default function Editor({ projectId }: { projectId: string }) {
 
   // 翻譯是後端直接寫進 subtitles.json 的,前端只把 trans 併回來(按 id 對,
   // 這樣使用者一邊翻一邊增刪句子也不會對錯行),原文以畫面上的為準。
-  const mergeTrans = useCallback(() => {
+  const mergeTranslation = useCallback((mode: "bilingual" | "replace" = "bilingual") => {
     api
       .getSubtitles(projectId)
       .then((s) => {
-        const byId = new Map(s.segments.map((x) => [x.id, x.trans]));
+        const byId = new Map(s.segments.map((x) => [x.id, x]));
         setSegments((prev) => {
           let changed = false;
           const next = prev.map((seg) => {
-            const t = byId.get(seg.id);
-            if (t && seg.trans !== t) {
+            const translated = byId.get(seg.id);
+            if (mode === "replace" && translated?.text && seg.text !== translated.text) {
               changed = true;
-              return { ...seg, trans: t };
+              return { ...seg, text: translated.text, trans: undefined };
+            }
+            if (mode === "bilingual" && translated?.trans && seg.trans !== translated.trans) {
+              changed = true;
+              return { ...seg, trans: translated.trans };
             }
             return seg;
           });
@@ -370,7 +438,7 @@ export default function Editor({ projectId }: { projectId: string }) {
         .getTranslate(projectId)
         .then((j) => {
           setTransJob(j);
-          mergeTrans();
+          mergeTranslation(j.mode ?? "bilingual");
           if (j.status === "error") {
             alert(t("翻譯失敗:{0}", j.error ?? t("未知錯誤")));
             setTransJob(null);
@@ -379,7 +447,27 @@ export default function Editor({ projectId }: { projectId: string }) {
         .catch(() => {});
     }, 2000);
     return () => clearInterval(timer);
-  }, [translating, projectId, mergeTrans]);
+  }, [translating, projectId, mergeTranslation]);
+
+  // OCR 在後端重建整份字幕；進行中顯示逐幀進度，完成後一次載入新時間軸。
+  useEffect(() => {
+    if (!ocrRunning) return;
+    const timer = setInterval(() => {
+      api
+        .getOcr(projectId)
+        .then((job) => {
+          setOcrJob(job);
+          if (job.status === "done") {
+            loadSubtitles();
+            setOcrOpen(false);
+          } else if (job.status === "error") {
+            alert(`OCR 失敗：${job.error ?? "未知錯誤"}`);
+          }
+        })
+        .catch(() => {});
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [loadSubtitles, ocrRunning, projectId]);
 
   // 完成時短暫保留 100% 狀態，讓最後一批不會一完成就整張卡消失。
   useEffect(() => {
@@ -399,23 +487,45 @@ export default function Editor({ projectId }: { projectId: string }) {
     return () => clearInterval(timer);
   }, [fixJob?.status, translating, running]);
 
-  // 播放中用 rAF 平滑更新時間(timeupdate 只有 4Hz,播放頭會頓)
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) video.playbackRate = playbackRate;
+    localStorage.setItem("yaozi:playback-rate", String(playbackRate));
+  }, [playbackRate, project?.status]);
+
+  // 播放中用 rAF 平滑更新時間(timeupdate 只有 4Hz,播放頭會頓)。循環目前句也
+  // 放在同一個 frame loop 裡，避免再掛一條高頻監聽。
   useEffect(() => {
     if (!isPlaying) return;
     let raf = 0;
     const tick = () => {
       const v = videoRef.current;
-      if (v) setCurrentTime(v.currentTime);
+      if (v) {
+        const omitted = project?.omit_ranges?.find(
+          (range) => v.currentTime >= range.start && v.currentTime < range.end
+        );
+        if (omitted) v.currentTime = Math.min(omitted.end, v.duration || omitted.end);
+        if (loopSentence) {
+          const list = segmentsRef.current;
+          const selected = selectedIdxRef.current;
+          const i = selected >= 0 ? selected : activeIndexAt(list, v.currentTime);
+          const seg = i >= 0 ? list[i] : null;
+          if (seg && v.currentTime >= seg.end - 0.015) {
+            v.currentTime = Math.max(0, seg.start - 0.25);
+          }
+        }
+        setCurrentTime(v.currentTime);
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [isPlaying]);
+  }, [isPlaying, loopSentence, project?.omit_ranges]);
 
   // 自動存檔(0.8 秒沒動作就送出;失敗 3 秒後重試)
   const doSave = useCallback(() => {
-    if (translatingRef.current) {
-      // 翻譯期間後端正在寫同一份 subtitles.json,現在送出會蓋掉剛翻好的那批,先等它
+    if (translatingRef.current || ocrRunningRef.current) {
+      // 翻譯/OCR 期間後端正在寫同一份 subtitles.json，現在送出會蓋掉新結果，先等它
       saveTimer.current = window.setTimeout(doSave, 1500);
       return;
     }
@@ -711,6 +821,33 @@ export default function Editor({ projectId }: { projectId: string }) {
     else v.pause();
   }, []);
 
+  const replaySentence = useCallback(() => {
+    const video = videoRef.current;
+    const list = segmentsRef.current;
+    if (!video || !list.length) return;
+    const selected = selectedIdxRef.current;
+    const i = selected >= 0 ? selected : activeIndexAt(list, video.currentTime);
+    const seg = i >= 0 ? list[i] : null;
+    if (!seg) return;
+    video.currentTime = Math.max(0, seg.start - 0.35);
+    setCurrentTime(video.currentTime);
+    video.play();
+  }, []);
+
+  const changePlaybackRate = useCallback((rate: number) => {
+    setPlaybackRate(rate);
+    if (videoRef.current) videoRef.current.playbackRate = rate;
+  }, []);
+
+  const requestReveal = useCallback(
+    (index: number, align: "auto" | "center" = "auto", clearSearch = false) => {
+      if (clearSearch) setQuery("");
+      revealTokenRef.current += 1;
+      setPendingReveal({ index, align, token: revealTokenRef.current });
+    },
+    []
+  );
+
   const toggleWave = useCallback(() => {
     setWaveOpen((v) => {
       localStorage.setItem("yaozi:wave-open", v ? "0" : "1");
@@ -718,12 +855,28 @@ export default function Editor({ projectId }: { projectId: string }) {
     });
   }, []);
 
-  // 每句有沒有毛病(太快/太長/空白/跟前句重疊)。算一次,列表、狀態列、跳轉共用。
-  const problems = useMemo(
-    () => segments.map((_, i) => segmentProblem(segments, i)),
-    [segments]
-  );
+  // 每句有沒有毛病(太快/太長/空白/跟前句重疊)。有任何譯文時也把缺漏列出來。
+  // 結構化資料給問題中心分類，字串則留給既有列表與狀態提示。
+  const problemInfos = useMemo(() => {
+    const bilingual = segments.some((seg) => seg.trans !== undefined);
+    return segments.map((seg, i) => {
+      const structural = segmentProblemInfo(segments, i);
+      if (structural) return structural;
+      if (bilingual && !seg.trans?.trim()) {
+        return { kind: "missing_translation" as const, label: t("缺少譯文") };
+      }
+      return null;
+    });
+  }, [segments]);
+  const problems = useMemo(() => problemInfos.map((problem) => problem?.label ?? ""), [problemInfos]);
   const problemCount = useMemo(() => problems.filter(Boolean).length, [problems]);
+  const problemItems = useMemo<ProblemItem[]>(
+    () =>
+      problemInfos.flatMap((problem, index) =>
+        problem ? [{ index, segment: segments[index], problem }] : []
+      ),
+    [problemInfos, segments]
+  );
   const problemsRef = useRef(problems);
   problemsRef.current = problems;
 
@@ -738,10 +891,28 @@ export default function Editor({ projectId }: { projectId: string }) {
       if (!probs[i]) continue;
       selectOnly(i);
       seekTo(list[i].start);
-      rowRefs.current[i]?.scrollIntoView({ block: "center" });
+      requestReveal(i, "center", true);
       return;
     }
-  }, [selectOnly, seekTo]);
+  }, [requestReveal, selectOnly, seekTo]);
+
+  const openProblemCenter = useCallback(() => {
+    setDictOpen(false);
+    setStyleOpen(false);
+    setOcrOpen(false);
+    setProblemOpen((open) => !open);
+  }, []);
+
+  const selectProblem = useCallback(
+    (index: number) => {
+      const seg = segmentsRef.current[index];
+      if (!seg) return;
+      selectOnly(index);
+      seekTo(seg.start);
+      requestReveal(index, "center", true);
+    },
+    [requestReveal, seekTo, selectOnly]
+  );
 
   const undo = useCallback(() => {
     setEditing(null);
@@ -783,6 +954,16 @@ export default function Editor({ projectId }: { projectId: string }) {
       if (e.key === " ") {
         e.preventDefault();
         togglePlay();
+        return;
+      }
+      if (key === "r" && !ctrl) {
+        e.preventDefault();
+        replaySentence();
+        return;
+      }
+      if (key === "l" && !ctrl) {
+        e.preventDefault();
+        setLoopSentence((enabled) => !enabled);
         return;
       }
       if (key === "b" && !ctrl) {
@@ -841,7 +1022,7 @@ export default function Editor({ projectId }: { projectId: string }) {
           selectOnly(next);
           seekTo(list[next].start);
         }
-        rowRefs.current[next]?.scrollIntoView({ block: "nearest" });
+        requestReveal(next, "auto", true);
         return;
       }
       if (e.key === "Enter") {
@@ -860,25 +1041,17 @@ export default function Editor({ projectId }: { projectId: string }) {
     redo,
     seekTo,
     togglePlay,
+    replaySentence,
     setSegments,
     deleteSegment,
     projectId,
     selectOnly,
     mergeSelected,
     gotoNextProblem,
+    requestReveal,
   ]);
 
   const activeIdx = useMemo(() => activeIndexAt(segments, currentTime), [segments, currentTime]);
-
-  // 播放時讓目前那句自動捲進視野(搜尋過濾中不捲)
-  useEffect(() => {
-    if (!isPlaying || editing || activeIdx < 0 || query) return;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    rowRefs.current[activeIdx]?.scrollIntoView({
-      block: "nearest",
-      behavior: reduced ? "auto" : "smooth",
-    });
-  }, [activeIdx, isPlaying, editing, query]);
 
   // 搜尋過濾(保留原始索引,操作照常)。譯名要統一時得搜得到譯文那一行。
   const rows = useMemo(() => {
@@ -887,6 +1060,46 @@ export default function Editor({ projectId }: { projectId: string }) {
     if (!q) return all;
     return all.filter((r) => r.seg.text.includes(q) || (r.seg.trans ?? "").includes(q));
   }, [segments, query]);
+  const pinnedVirtualIndexes = useMemo(() => {
+    const ids = [editing?.id, focusedTransId].filter(Boolean);
+    return ids
+      .map((id) => rows.findIndex((row) => row.seg.id === id))
+      .filter((index) => index >= 0);
+  }, [editing?.id, focusedTransId, rows]);
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => subListRef.current,
+    estimateSize: (index) => (rows[index]?.seg.trans !== undefined ? 52 : 32),
+    overscan: 10,
+    getItemKey: (index) => rows[index]?.seg.id ?? index,
+    rangeExtractor: (range) => {
+      const visible = defaultRangeExtractor(range);
+      return Array.from(new Set([...visible, ...pinnedVirtualIndexes])).sort((a, b) => a - b);
+    },
+  });
+
+  useEffect(() => {
+    if (rows.length) rowVirtualizer.scrollToIndex(0, { align: "start" });
+  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 跳到尚未渲染的字幕時先讓虛擬清單移到該處；若搜尋把它濾掉，requestReveal
+  // 會先清除搜尋，這個 effect 會在 rows 更新後再完成捲動。
+  useEffect(() => {
+    if (!pendingReveal) return;
+    const virtualIndex = rows.findIndex((row) => row.idx === pendingReveal.index);
+    if (virtualIndex < 0) return;
+    rowVirtualizer.scrollToIndex(virtualIndex, { align: pendingReveal.align });
+    setPendingReveal((current) =>
+      current?.token === pendingReveal.token ? null : current
+    );
+  }, [pendingReveal, rowVirtualizer, rows]);
+
+  // 播放時只捲動到下一個實際字幕列，不跟著每一個 animation frame 重排。
+  useEffect(() => {
+    if (!isPlaying || editing || activeIdx < 0 || query) return;
+    const virtualIndex = rows.findIndex((row) => row.idx === activeIdx);
+    if (virtualIndex >= 0) rowVirtualizer.scrollToIndex(virtualIndex, { align: "auto" });
+  }, [activeIdx, editing, isPlaying, query, rowVirtualizer, rows]);
 
   /** 全部取代。統一譯名、掃固定錯字是校對最常做的事,一句一句改太慢。 */
   const replaceAll = () => {
@@ -935,6 +1148,35 @@ export default function Editor({ projectId }: { projectId: string }) {
       .catch((e: Error) => alert(e.message));
   };
 
+  // ---- 畫面硬字幕 OCR ----
+
+  const openOcr = () => {
+    setProblemOpen(false);
+    setStyleOpen(false);
+    setDictOpen(false);
+    setOcrOpen((open) => !open);
+  };
+
+  const startOcr = () => {
+    if (
+      segmentsRef.current.length > 0 &&
+      !confirm("OCR 會用畫面文字重建整份字幕與時間軸；目前字幕會先備份。確定開始？")
+    ) {
+      return;
+    }
+    window.clearTimeout(saveTimer.current);
+    api
+      .saveSubtitles(projectId, segmentsRef.current, marksRef.current)
+      .then(() => api.startOcr(projectId, ocrOptions))
+      .then(setOcrJob)
+      .catch((error: Error) => alert(error.message));
+  };
+
+  const cancelOcr = () => {
+    api.cancelOcr(projectId).catch(() => {});
+    setOcrJob((job) => (job ? { ...job, status: "canceled" } : null));
+  };
+
   // ---- AI 校正 ----
 
   const startFix = () => {
@@ -948,13 +1190,19 @@ export default function Editor({ projectId }: { projectId: string }) {
 
   const startTranslate = (target: string) => {
     if (transMenuRef.current) transMenuRef.current.open = false;
+    if (
+      translateMode === "replace" &&
+      !confirm(`翻成${target}後會直接取代全部原文，現有雙語譯文也會清除。確定繼續？`)
+    ) {
+      return;
+    }
     // 先把未存的編輯沖掉,後端才會照最新的原文翻
     window.clearTimeout(saveTimer.current);
     api
       .saveSubtitles(projectId, segmentsRef.current, marksRef.current)
       .then(() => {
         setSaveState("saved");
-        return api.startTranslate(projectId, target);
+        return api.startTranslate(projectId, target, translateMode);
       })
       .then(setTransJob)
       .catch((e: Error) => alert(e.message));
@@ -1037,10 +1285,10 @@ export default function Editor({ projectId }: { projectId: string }) {
       if (i >= 0) {
         selectOnly(i);
         seekTo(segmentsRef.current[i].start);
-        rowRefs.current[i]?.scrollIntoView({ block: "center" });
+        requestReveal(i, "center", true);
       }
     },
-    [seekTo, selectOnly]
+    [requestReveal, seekTo, selectOnly]
   );
 
   // ---- 成品影片匯出 ----
@@ -1085,6 +1333,9 @@ export default function Editor({ projectId }: { projectId: string }) {
   // ---- 詞庫 ----
 
   const openDict = () => {
+    setProblemOpen(false);
+    setStyleOpen(false);
+    setOcrOpen(false);
     setDictOpen(true);
     setDictMsg("");
     api
@@ -1179,6 +1430,14 @@ export default function Editor({ projectId }: { projectId: string }) {
     }
   }, [reviewItems, fixJob?.status, projectId]);
 
+  useEffect(() => {
+    if (!reviewItems) return;
+    setProblemOpen(false);
+    setDictOpen(false);
+    setStyleOpen(false);
+    setOcrOpen(false);
+  }, [reviewItems]);
+
   // ---- 畫面 ----
 
   if (loadError || !project) {
@@ -1242,6 +1501,7 @@ export default function Editor({ projectId }: { projectId: string }) {
           onCommitTimes={handleCommitTimes}
           onCreate={handleCreate}
           trim={project.trim}
+          omitRanges={project.omit_ranges ?? []}
         />
       ) : (
         <div className="wave-strip wave-loading">{t("波形載入中…")}</div>
@@ -1271,12 +1531,74 @@ export default function Editor({ projectId }: { projectId: string }) {
             {project.duration ? formatTime(project.duration) : "--:--"}
           </span>
         </span>
+        <span className="proof-controls" role="group" aria-label="校對播放控制">
+          <button
+            className="icon-btn"
+            onClick={replaySentence}
+            disabled={!segments.length}
+            aria-label="重播目前句"
+            title="從目前選取句的前 0.35 秒開始播放 (R)"
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
+              <path
+                d="M5 4H2.5V1.5M2.8 4A6 6 0 1 1 2 9"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path d="m7 5.4 4 2.6-4 2.6z" fill="currentColor" />
+            </svg>
+          </button>
+          <button
+            className={"icon-btn loop-btn" + (loopSentence ? " on" : "")}
+            onClick={() => setLoopSentence((enabled) => !enabled)}
+            disabled={!segments.length}
+            aria-label="循環目前句"
+            aria-pressed={loopSentence}
+            title="循環播放目前選取句 (L)"
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
+              <path
+                d="M3 5.5h8.5L10 4m3 6.5H4.5L6 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          <select
+            className="playback-rate"
+            value={playbackRate}
+            onChange={(e) => changePlaybackRate(Number(e.target.value))}
+            aria-label="播放速度"
+            title="校對播放速度"
+          >
+            {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
+              <option key={rate} value={rate}>
+                {rate}×
+              </option>
+            ))}
+          </select>
+        </span>
         <span className="toolbar-sep" aria-hidden />
         <TrimControls
           trim={project.trim}
           currentTime={currentTime}
           duration={project.duration ?? 0}
           onChange={setTrim}
+          onSeek={seekTo}
+        />
+        <OmitControls
+          ranges={project.omit_ranges ?? []}
+          pendingStart={omitStart}
+          currentTime={currentTime}
+          duration={project.duration ?? 0}
+          onPendingStart={setOmitStart}
+          onChange={setOmitRanges}
           onSeek={seekTo}
         />
         <span className="toolbar-sep" aria-hidden />
@@ -1339,6 +1661,15 @@ export default function Editor({ projectId }: { projectId: string }) {
         >
           {resegmenting ? t("重排中…") : t("重新斷句")}
         </button>
+        <button
+          className={"btn small" + (ocrOpen ? " on" : "")}
+          onClick={openOcr}
+          aria-pressed={ocrOpen}
+          disabled={project.has_video === false}
+          title="讀取影片畫面上已經燒入的字幕，建立文字與時間軸"
+        >
+          {ocrRunning ? `OCR ${Math.round((ocrJob?.progress ?? 0) * 100)}%` : "OCR 硬字幕"}
+        </button>
         {llmAvailable &&
           languages.length > 0 &&
           (translating ? (
@@ -1351,6 +1682,27 @@ export default function Editor({ projectId }: { projectId: string }) {
                 {t("翻譯")}
               </summary>
               <div className="hotkey-panel trans-panel">
+                <div className="trans-mode" role="group" aria-label="翻譯寫入方式">
+                  <button
+                    type="button"
+                    className={translateMode === "bilingual" ? "on" : ""}
+                    aria-pressed={translateMode === "bilingual"}
+                    onClick={() => setTranslateMode("bilingual")}
+                  >
+                    <strong>雙語</strong>
+                    <span>保留原文，加一行譯文</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={translateMode === "replace" ? "on replace" : "replace"}
+                    aria-pressed={translateMode === "replace"}
+                    onClick={() => setTranslateMode("replace")}
+                  >
+                    <strong>取代原文</strong>
+                    <span>完成後只留下翻譯</span>
+                  </button>
+                </div>
+                <span className="trans-target-label">翻譯語言</span>
                 {languages.map((lang) => (
                   <button key={lang} className="trans-item" onClick={() => startTranslate(lang)}>
                     {t("翻成")}{lang}
@@ -1382,7 +1734,12 @@ export default function Editor({ projectId }: { projectId: string }) {
         </button>
         <button
           className={"btn small" + (styleOpen ? " on" : "")}
-          onClick={() => setStyleOpen((v) => !v)}
+          onClick={() => {
+            setDictOpen(false);
+            setProblemOpen(false);
+            setOcrOpen(false);
+            setStyleOpen((v) => !v);
+          }}
           aria-pressed={styleOpen}
           title={t("字型、字級、顏色——影片上即時預覽,燒錄成品用同一組設定")}
         >
@@ -1402,7 +1759,11 @@ export default function Editor({ projectId }: { projectId: string }) {
       </div>
 
       {/* 面板一開就把 .editor 縮窄,面板才不會蓋在字幕上——調外觀正是最需要一邊看字幕的時候 */}
-      <main className={"editor" + (styleOpen || dictOpen || reviewItems ? " docked" : "")}>
+      <main
+        className={
+          "editor" + (styleOpen || dictOpen || reviewItems || problemOpen || ocrOpen ? " docked" : "")
+        }
+      >
         <section className="player-pane">
           <div className={"video-wrap" + (project.has_video === false ? " audio-only" : "")}>
             <video
@@ -1414,6 +1775,7 @@ export default function Editor({ projectId }: { projectId: string }) {
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
               onLoadedMetadata={(e) => {
+                e.currentTarget.playbackRate = playbackRate;
                 const stored = localStorage.getItem(`yaozi:safeframe:${projectId}`);
                 setSafeFrame(
                   stored ??
@@ -1425,6 +1787,17 @@ export default function Editor({ projectId }: { projectId: string }) {
               }}
             />
             <SafeFrame videoRef={videoRef} frameKey={safeFrame} />
+            {ocrOpen && (
+              <div
+                className="ocr-crop-overlay"
+                style={{
+                  top: `${ocrOptions.crop_top * 100}%`,
+                  height: `${(ocrOptions.crop_bottom - ocrOptions.crop_top) * 100}%`,
+                }}
+              >
+                <span>OCR 掃描區</span>
+              </div>
+            )}
             {activeText && subStyle && (
               // 疊在影片實際畫面上,尺寸按同一組百分比換算,所見即為燒出來的樣子
               <div
@@ -1510,16 +1883,16 @@ export default function Editor({ projectId }: { projectId: string }) {
             )}
             <span className="toolbar-spacer" />
             <button
-              className="btn small"
-              onClick={gotoNextProblem}
-              disabled={!problemCount}
-              title={t("跳到下一句太快 / 太長 / 空白 / 跟前句重疊的字幕 (N)")}
+              className={"btn small problem-trigger" + (problemOpen ? " on" : "")}
+              onClick={openProblemCenter}
+              aria-pressed={problemOpen}
+              title={t("開啟問題中心；按 N 可直接跳到下一句")}
             >
-              {problemCount ? t("下一個問題 {0}", problemCount) : t("沒有問題句")}
+              {problemCount ? t("問題 {0}", problemCount) : t("問題已清")}
             </button>
           </div>
 
-          <div className="sub-list">
+          <div className="sub-list" ref={subListRef}>
             {segments.length === 0 ? (
               <div className="editor-message">
                 <p>{t("沒有辨識到任何語音。")}</p>
@@ -1530,32 +1903,48 @@ export default function Editor({ projectId }: { projectId: string }) {
             ) : rows.length === 0 ? (
               <p className="empty-hint">{t("沒有符合「{0}」的字幕。", query)}</p>
             ) : (
-              rows.map(({ seg, idx }) => (
-                <Row
-                  key={seg.id}
-                  seg={seg}
-                  index={idx}
-                  problem={problems[idx]}
-                  isActive={idx === activeIdx}
-                  isSelected={idx === selectedIdx}
-                  inRange={
-                    idx >= Math.min(anchorIdx, selectedIdx) &&
-                    idx <= Math.max(anchorIdx, selectedIdx) &&
-                    anchorIdx !== selectedIdx
-                  }
-                  editingCursor={editing?.id === seg.id ? editing.cursor : null}
-                  rowRef={(el) => (rowRefs.current[idx] = el)}
-                  onRowClick={handleRowClick}
-                  onStartEdit={handleStartEdit}
-                  onBlurCommit={handleBlur}
-                  onEsc={handleEsc}
-                  onSplit={handleSplit}
-                  onMergeUp={handleMergeUp}
-                  onTab={handleTab}
-                  onDelete={deleteSegment}
-                  onTransCommit={commitTrans}
-                />
-              ))
+              <div
+                className="virtual-sub-list"
+                style={{ height: rowVirtualizer.getTotalSize() }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const { seg, idx } = rows[virtualRow.index];
+                  return (
+                    <div
+                      key={seg.id}
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      className="virtual-sub-row"
+                      style={{ transform: `translateY(${virtualRow.start}px)` }}
+                    >
+                      <Row
+                        seg={seg}
+                        index={idx}
+                        problem={problems[idx]}
+                        isActive={idx === activeIdx}
+                        isSelected={idx === selectedIdx}
+                        inRange={
+                          idx >= Math.min(anchorIdx, selectedIdx) &&
+                          idx <= Math.max(anchorIdx, selectedIdx) &&
+                          anchorIdx !== selectedIdx
+                        }
+                        editingCursor={editing?.id === seg.id ? editing.cursor : null}
+                        onRowClick={handleRowClick}
+                        onStartEdit={handleStartEdit}
+                        onBlurCommit={handleBlur}
+                        onEsc={handleEsc}
+                        onSplit={handleSplit}
+                        onMergeUp={handleMergeUp}
+                        onTab={handleTab}
+                        onDelete={deleteSegment}
+                        onTransCommit={commitTrans}
+                        onTransFocus={setFocusedTransId}
+                        onTransBlur={() => setFocusedTransId(null)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
 
@@ -1592,6 +1981,28 @@ export default function Editor({ projectId }: { projectId: string }) {
           )}
         </section>
       </main>
+
+      {problemOpen && (
+        <ProblemPanel
+          items={problemItems}
+          selectedIndex={selectedIdx}
+          onSelect={selectProblem}
+          onNext={gotoNextProblem}
+          onClose={() => setProblemOpen(false)}
+        />
+      )}
+
+      {ocrOpen && (
+        <OcrPanel
+          options={ocrOptions}
+          job={ocrJob}
+          hasTrim={Boolean(project.trim)}
+          onChange={setOcrOptions}
+          onStart={startOcr}
+          onCancel={cancelOcr}
+          onClose={() => setOcrOpen(false)}
+        />
+      )}
 
       {styleOpen && subStyle && (
         <StylePanel
@@ -1793,14 +2204,117 @@ function AiJobStatus({
       </span>
       <div className="fix-status-info">
         {t("第 {0}/{1} 批", currentBatch, total)} · {translatingJob
-          ? t("翻成{0}", translatingJob.target ?? t("目標語言"))
+          ? t(
+              "翻成{0}",
+              translatingJob.target ?? t("目標語言"),
+            ) + (translatingJob.mode === "replace" ? t(" · 取代原文") : t(" · 雙語"))
           : t("已找到 {0} 個建議", fixingJob?.suggestions?.length ?? 0)} · {t("{0} 秒", seconds)}
       </div>
     </div>
   );
 }
 
-/** 剪輯範圍:設起點/終點,燒錄與匯出字幕都只出這一段。整段刪除、多段拼接不做。 */
+function normalizeOmitRanges(ranges: Project["omit_ranges"]): Project["omit_ranges"] {
+  const sorted = ranges
+    .filter((range) => range.end - range.start >= 0.1)
+    .sort((a, b) => a.start - b.start);
+  const merged: Project["omit_ranges"] = [];
+  for (const range of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && range.start <= last.end + 0.02) {
+      last.end = Math.max(last.end, range.end);
+    } else {
+      merged.push({ start: round3(range.start), end: round3(range.end) });
+    }
+  }
+  return merged;
+}
+
+/** 中間剪除：先記起點，再把目前播放位置當終點。可建立多段並逐段移除。 */
+function OmitControls({
+  ranges,
+  pendingStart,
+  currentTime,
+  duration,
+  onPendingStart,
+  onChange,
+  onSeek,
+}: {
+  ranges: Project["omit_ranges"];
+  pendingStart: number | null;
+  currentTime: number;
+  duration: number;
+  onPendingStart: (time: number | null) => void;
+  onChange: (ranges: Project["omit_ranges"]) => void;
+  onSeek: (time: number) => void;
+}) {
+  const commit = () => {
+    if (pendingStart === null) return;
+    const start = Math.max(0, Math.min(pendingStart, currentTime));
+    const end = Math.min(duration, Math.max(pendingStart, currentTime));
+    if (end - start < 0.1) return;
+    onChange(normalizeOmitRanges([...ranges, { start, end }]));
+    onPendingStart(null);
+  };
+  return (
+    <span className="omit-controls">
+      {pendingStart === null ? (
+        <button
+          className="btn small omit-start"
+          onClick={() => onPendingStart(currentTime)}
+          title="記住目前播放位置，再移到區段終點"
+        >
+          ✂ 剪掉一段
+        </button>
+      ) : (
+        <span className="omit-pending">
+          <button className="omit-time mono" onClick={() => onSeek(pendingStart)} title="回到剪除起點">
+            起點 {formatTimeMs(pendingStart)}
+          </button>
+          <button
+            className="btn small danger"
+            onClick={commit}
+            disabled={Math.abs(currentTime - pendingStart) < 0.1}
+            title="把起點到目前播放位置加入剪除區段"
+          >
+            剪到此處
+          </button>
+          <button className="icon-btn" onClick={() => onPendingStart(null)} title="取消設定剪除區段">
+            ×
+          </button>
+        </span>
+      )}
+      {ranges.length > 0 && (
+        <details className="omit-menu">
+          <summary className="btn small">已剪 {ranges.length} 段</summary>
+          <div className="omit-items">
+            <div className="omit-items-head">
+              <strong>成品會移除的區段</strong>
+              <button className="link-btn danger" onClick={() => onChange([])}>全部清除</button>
+            </div>
+            {ranges.map((range, index) => (
+              <div className="omit-item" key={`${range.start}-${range.end}-${index}`}>
+                <button className="omit-range mono" onClick={() => onSeek(range.start)}>
+                  {formatTimeMs(range.start)}–{formatTimeMs(range.end)}
+                </button>
+                <span>{(range.end - range.start).toFixed(2)} 秒</span>
+                <button
+                  className="icon-btn"
+                  onClick={() => onChange(ranges.filter((_, itemIndex) => itemIndex !== index))}
+                  aria-label={`取消第 ${index + 1} 個剪除區段`}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </span>
+  );
+}
+
+/** 頭尾剪輯範圍：保留範圍內內容，仍可和多段中間剪除一起使用。 */
 function TrimControls({
   trim,
   currentTime,
@@ -2063,7 +2577,6 @@ interface RowProps {
   isSelected: boolean;
   inRange: boolean;
   editingCursor: number | null;
-  rowRef: (el: HTMLDivElement | null) => void;
   onRowClick: (index: number, extend: boolean) => void;
   onStartEdit: (id: string, cursor: number) => void;
   onBlurCommit: (id: string, draft: string) => void;
@@ -2073,6 +2586,8 @@ interface RowProps {
   onTab: (id: string, draft: string, dir: 1 | -1) => void;
   onDelete: (index: number) => void;
   onTransCommit: (id: string, text: string) => void;
+  onTransFocus: (id: string) => void;
+  onTransBlur: () => void;
 }
 
 const Row = memo(function Row({
@@ -2083,7 +2598,6 @@ const Row = memo(function Row({
   isSelected,
   inRange,
   editingCursor,
-  rowRef,
   onRowClick,
   onStartEdit,
   onBlurCommit,
@@ -2093,6 +2607,8 @@ const Row = memo(function Row({
   onTab,
   onDelete,
   onTransCommit,
+  onTransFocus,
+  onTransBlur,
 }: RowProps) {
   const cls =
     "sub-row" +
@@ -2101,7 +2617,6 @@ const Row = memo(function Row({
     (inRange ? " ranged" : "");
   return (
     <div
-      ref={rowRef}
       className={cls}
       onClick={(e) => onRowClick(index, e.shiftKey)}
       onDoubleClick={() => onStartEdit(seg.id, seg.text.length)}
@@ -2146,7 +2661,13 @@ const Row = memo(function Row({
         ✕
       </button>
       {seg.trans !== undefined && (
-        <TransInput segId={seg.id} value={seg.trans} onCommit={onTransCommit} />
+        <TransInput
+          segId={seg.id}
+          value={seg.trans}
+          onCommit={onTransCommit}
+          onFocus={onTransFocus}
+          onBlur={onTransBlur}
+        />
       )}
     </div>
   );
@@ -2157,10 +2678,14 @@ function TransInput({
   segId,
   value,
   onCommit,
+  onFocus,
+  onBlur,
 }: {
   segId: string;
   value: string;
   onCommit: (id: string, text: string) => void;
+  onFocus: (id: string) => void;
+  onBlur: () => void;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
@@ -2169,7 +2694,11 @@ function TransInput({
       className="row-trans"
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => onCommit(segId, draft)}
+      onFocus={() => onFocus(segId)}
+      onBlur={() => {
+        onCommit(segId, draft);
+        onBlur();
+      }}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();

@@ -10,7 +10,7 @@ import subprocess
 import threading
 import traceback
 
-from . import audio, config, exporter, storage, style
+from . import audio, config, exporter, storage, style, timeline
 
 OUT_NAME = "export.mp4"
 
@@ -20,6 +20,12 @@ _lock = threading.Lock()
 # (影像編碼器, 音訊處理),由快到慢依序嘗試
 ATTEMPTS = [
     ("h264_nvenc", "copy"),
+    ("h264_nvenc", "aac"),
+    ("libx264", "aac"),
+]
+
+# 中間剪除走 filter_complex concat,音視訊都得重編碼,不能直接複製音軌
+CONCAT_ATTEMPTS = [
     ("h264_nvenc", "aac"),
     ("libx264", "aac"),
 ]
@@ -52,16 +58,18 @@ def cancel(pid: str) -> None:
             _jobs.pop(pid, None)
 
 
-def _probe_size(media) -> tuple[int, int]:
+def _probe_media(media) -> tuple[int, int, bool]:
     out = subprocess.run(
-        [config.FFPROBE, "-v", "error", "-select_streams", "v:0",
-         "-show_entries", "stream=width,height", "-of", "json", str(media)],
+        [config.FFPROBE, "-v", "error", "-show_entries", "stream=codec_type,width,height",
+         "-of", "json", str(media)],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     streams = json.loads(out.stdout).get("streams") or []
-    if not streams:
+    video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+    if not video:
         raise RuntimeError("讀不到影片解析度")
-    return int(streams[0]["width"]), int(streams[0]["height"])
+    has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
+    return int(video["width"]), int(video["height"]), has_audio
 
 
 def start(pid: str) -> dict:
@@ -82,11 +90,13 @@ def start(pid: str) -> dict:
         if existing and existing["status"] == "running":
             raise RuntimeError("匯出已在進行中")
 
-    width, height = _probe_size(media)
+    width, height, has_audio = _probe_media(media)
     trim = meta.get("trim")
-    segments = storage.apply_trim(segments, trim)
+    omit_ranges = meta.get("omit_ranges") or []
+    intervals = timeline.kept_intervals(float(meta.get("duration") or 0), trim, omit_ranges)
+    segments = storage.apply_edits(segments, meta)
     if not segments:
-        raise RuntimeError("剪輯範圍內沒有字幕")
+        raise RuntimeError("保留的剪輯範圍內沒有字幕")
     (d / "burn.ass").write_text(
         exporter.to_ass(segments, width, height, style.load()), encoding="utf-8"
     )
@@ -94,25 +104,36 @@ def start(pid: str) -> dict:
     job = {"status": "running", "progress": 0.0, "error": None, "cancel": False, "proc": None}
     with _lock:
         _jobs[pid] = job
-    duration = float(meta.get("duration") or 0)
-    if trim:
-        duration = trim["end"] - trim["start"]
+    duration = timeline.edited_duration(float(meta.get("duration") or 0), trim, omit_ranges)
     threading.Thread(
         target=_run,
-        args=(pid, d, meta["media_file"], duration, trim, job, audio.filter_chain()),
+        args=(
+            pid, d, meta["media_file"], duration, trim, intervals,
+            has_audio, bool(omit_ranges), job, audio.filter_chain(),
+        ),
         daemon=True,
     ).start()
     return get_state(pid)
 
 
 def _run(
-    pid: str, d, media_name: str, duration: float, trim: dict | None, job: dict, afilter: str = ""
+    pid: str,
+    d,
+    media_name: str,
+    duration: float,
+    trim: dict | None,
+    intervals: list[dict],
+    has_audio: bool,
+    use_concat: bool,
+    job: dict,
+    afilter: str = "",
 ) -> None:
     err_file = d / "burn_err.txt"
     try:
         last_err = ""
-        # 有音訊濾鏡就不能直接複製音軌,第一個組合跳過
-        attempts = [a for a in ATTEMPTS if not (afilter and a[1] == "copy")]
+        # 中間剪除要 concat 重組時間軸,音視訊都得重編碼;有音訊濾鏡也不能直接複製音軌
+        attempts = ATTEMPTS if not use_concat else CONCAT_ATTEMPTS
+        attempts = [a for a in attempts if not (afilter and a[1] == "copy")]
         for vcodec, acodec in attempts:
             if job["cancel"]:
                 job["status"] = "canceled"
@@ -120,17 +141,46 @@ def _run(
             args = [config.FFMPEG, "-y", "-v", "error", "-nostats", "-progress", "pipe:1"]
             # -ss 放在 -i 前面是「輸入端尋址」,快而且輸出時間軸會歸零,
             # 剛好對上已經平移過的 burn.ass
-            if trim:
+            if trim and not use_concat:
                 args += ["-ss", f"{trim['start']:.3f}", "-t", f"{trim['end'] - trim['start']:.3f}"]
-            args += ["-i", media_name, "-vf", "ass=burn.ass", "-c:v", vcodec]
+            args += ["-i", media_name]
+            if use_concat:
+                filters = []
+                inputs = []
+                for index, interval in enumerate(intervals):
+                    start, end = interval["start"], interval["end"]
+                    filters.append(
+                        f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{index}]"
+                    )
+                    inputs.append(f"[v{index}]")
+                    if has_audio:
+                        filters.append(
+                            f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{index}]"
+                        )
+                        inputs.append(f"[a{index}]")
+                filters.append(
+                    "".join(inputs)
+                    + f"concat=n={len(intervals)}:v=1:a={1 if has_audio else 0}[vcat]"
+                    + ("[acat]" if has_audio else "")
+                )
+                filters.append("[vcat]ass=burn.ass[vout]")
+                if has_audio and afilter:
+                    filters.append(f"[acat]{afilter}[aout]")
+                args += ["-filter_complex", ";".join(filters), "-map", "[vout]"]
+                if has_audio:
+                    args += ["-map", "[aout]" if (has_audio and afilter) else "[acat]"]
+            else:
+                args += ["-vf", "ass=burn.ass"]
+            args += ["-c:v", vcodec]
             if vcodec == "h264_nvenc":
                 args += ["-preset", "p5", "-cq", "19"]
             else:
                 args += ["-preset", "medium", "-crf", "19"]
-            if afilter:
-                args += ["-af", afilter]
-            args += ["-c:a", acodec]
-            if acodec == "aac":
+            if has_audio:
+                if afilter and not use_concat:
+                    args += ["-af", afilter]
+                args += ["-c:a", acodec]
+            if has_audio and acodec == "aac":
                 args += ["-b:a", "192k"]
             args += [OUT_NAME]
 

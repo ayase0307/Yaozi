@@ -7,6 +7,8 @@ import type {
   DictEntry,
   FixJob,
   FontGroup,
+  OcrJob,
+  OcrOptions,
   Project,
   Segment,
   SubtitleStyle,
@@ -33,7 +35,7 @@ async function json<T>(res: Response): Promise<T> {
 export const api = {
   getHealth: () =>
     fetch("/api/health").then((r) =>
-      json<{ ffmpeg: boolean; claude: boolean; codex: boolean; ai_provider: AiProvider }>(r)
+      json<{ ffmpeg: boolean; ocr: boolean; claude: boolean; codex: boolean; ai_provider: AiProvider }>(r)
     ),
 
   listProjects: () => fetch("/api/projects").then((r) => json<Project[]>(r)),
@@ -48,7 +50,10 @@ export const api = {
   getProject: (id: string) => fetch(`/api/projects/${id}`).then((r) => json<Project>(r)),
 
   /** 改專案名或剪輯範圍;只送要改的欄位。 */
-  patchProject: (id: string, patch: { name?: string; trim?: Project["trim"] }) =>
+  patchProject: (
+    id: string,
+    patch: { name?: string; trim?: Project["trim"]; omit_ranges?: Project["omit_ranges"] }
+  ) =>
     fetch(`/api/projects/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -151,11 +156,11 @@ export const api = {
       body: JSON.stringify({ provider }),
     }).then((r) => json<AiStatus>(r)),
 
-  startTranslate: (id: string, target: string) =>
+  startTranslate: (id: string, target: string, mode: "bilingual" | "replace" = "bilingual") =>
     fetch(`/api/projects/${id}/translate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target }),
+      body: JSON.stringify({ target, mode }),
     }).then((r) => json<TranslateJob>(r)),
 
   getTranslate: (id: string) =>
@@ -171,6 +176,18 @@ export const api = {
     fetch(`/api/projects/${id}/translate?clear=true`, { method: "DELETE" }).then((r) =>
       json<TranslateJob>(r)
     ),
+
+  startOcr: (id: string, options: OcrOptions) =>
+    fetch(`/api/projects/${id}/ocr`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    }).then((r) => json<OcrJob>(r)),
+
+  getOcr: (id: string) => fetch(`/api/projects/${id}/ocr`).then((r) => json<OcrJob>(r)),
+
+  cancelOcr: (id: string) =>
+    fetch(`/api/projects/${id}/ocr`, { method: "DELETE" }).then((r) => json<OcrJob>(r)),
 
   startFix: (id: string) =>
     fetch(`/api/projects/${id}/fix`, { method: "POST" }).then((r) => json<FixJob>(r)),

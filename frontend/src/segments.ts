@@ -95,16 +95,51 @@ const MAX_WIDTH = 48;
  * 這一句有沒有毛病?有的話回傳一句話說明,沒有回傳 ""。
  * 「跳到下一個問題」跟校對清單都讀這裡,標準只有一份。
  */
-export function segmentProblem(segments: Segment[], i: number): string {
+export type SegmentProblemKind =
+  | "empty"
+  | "overlap"
+  | "too_short"
+  | "too_fast"
+  | "fast"
+  | "too_long"
+  | "missing_translation";
+
+export interface SegmentProblemInfo {
+  kind: SegmentProblemKind;
+  label: string;
+}
+
+/**
+ * 回傳可供介面分類的問題資料。每句只回最需要先處理的一項，順序與人工
+ * 校對優先度一致：內容／時間軸問題先於閱讀速度與長度問題。
+ */
+export function segmentProblemInfo(
+  segments: Segment[],
+  i: number
+): SegmentProblemInfo | null {
   const seg = segments[i];
-  if (!seg) return "";
-  if (!seg.text.trim()) return t("這句是空的");
-  if (i > 0 && seg.start < segments[i - 1].end - 0.001) return t("跟前一句時間重疊");
-  if (seg.end - seg.start < 0.4) return t("停留不到 0.4 秒,幾乎看不到");
+  if (!seg) return null;
+  if (!seg.text.trim()) return { kind: "empty", label: t("這句是空的") };
+  if (i > 0 && seg.start < segments[i - 1].end - 0.001) {
+    return { kind: "overlap", label: t("跟前一句時間重疊") };
+  }
+  if (seg.end - seg.start < 0.4) {
+    return { kind: "too_short", label: t("停留不到 0.4 秒,幾乎看不到") };
+  }
   const level = speedLevel(seg);
-  if (level) return level === "over" ? t("太快了,來不及看完") : t("偏快");
-  if (textWidth(seg.text) > MAX_WIDTH) return t("太長,一屏塞不下");
-  return "";
+  if (level) {
+    return level === "over"
+      ? { kind: "too_fast", label: t("太快了,來不及看完") }
+      : { kind: "fast", label: t("偏快") };
+  }
+  if (textWidth(seg.text) > MAX_WIDTH) {
+    return { kind: "too_long", label: t("太長,一屏塞不下") };
+  }
+  return null;
+}
+
+export function segmentProblem(segments: Segment[], i: number): string {
+  return segmentProblemInfo(segments, i)?.label ?? "";
 }
 
 /**

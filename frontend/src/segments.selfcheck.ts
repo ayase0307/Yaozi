@@ -2,7 +2,14 @@
  * 字幕邏輯的自我檢查。跑法:`npm run selfcheck`(Node 24 直接吃 TS)。
  * 只測會算錯又看不出來的那幾條:合併的接縫、閱讀速度、問題判定。
  */
-import { mergeSegments, parseSrt, readingSpeed, segmentProblem, textWidth } from "./segments.ts";
+import {
+  mergeSegments,
+  parseSrt,
+  readingSpeed,
+  segmentProblem,
+  segmentProblemInfo,
+  textWidth,
+} from "./segments.ts";
 import type { Segment } from "./types.ts";
 
 // 自己寫兩行,免得為了跑一個檢查去裝 @types/node
@@ -45,6 +52,7 @@ assert.equal(mergeSegments(seg(0, 1, "a", "甲"), seg(1, 2, "b")).trans, "甲");
 const list = [seg(0, 2, "正常的一句話"), seg(1.5, 3, "重疊"), seg(3, 5, "  ")];
 assert.equal(segmentProblem(list, 0), "");
 assert.ok(segmentProblem(list, 1).includes("重疊"));
+assert.equal(segmentProblemInfo(list, 1)?.kind, "overlap");
 assert.ok(segmentProblem(list, 2).includes("空"));
 assert.ok(segmentProblem([seg(0, 1, "一二三四五六七八九十")], 0).includes("快"));
 // 唱歌拉長音:字少秒數長,不該被當成問題

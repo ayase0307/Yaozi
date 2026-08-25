@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, uploadMedia } from "./api";
 import Brand from "./Brand";
 import { RUNNING_STATUSES, statusLabel, type Project } from "./types";
@@ -19,6 +19,23 @@ interface Upload {
   error?: string;
 }
 
+type ProjectFilter = "all" | "running" | "done" | "attention";
+type ProjectSort = "recent" | "name" | "duration";
+
+const PROJECT_FILTERS: { key: ProjectFilter; label: string }[] = [
+  { key: "all", label: "全部" },
+  { key: "running", label: "處理中" },
+  { key: "done", label: "已完成" },
+  { key: "attention", label: "需處理" },
+];
+
+function projectMatchesFilter(project: Project, filter: ProjectFilter): boolean {
+  if (filter === "running") return RUNNING_STATUSES.includes(project.status);
+  if (filter === "done") return project.status === "done";
+  if (filter === "attention") return project.status === "error" || project.status === "interrupted";
+  return true;
+}
+
 export default function Home() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -29,7 +46,14 @@ export default function Home() {
   const [ytOk, setYtOk] = useState<boolean | null>(null);
   const [url, setUrl] = useState("");
   const [urlBusy, setUrlBusy] = useState(false);
+  const [projectQuery, setProjectQuery] = useState("");
+  const [projectFilter, setProjectFilter] = useState<ProjectFilter>("all");
+  const [projectSort, setProjectSort] = useState<ProjectSort>(() => {
+    const stored = localStorage.getItem("yaozi:project-sort");
+    return stored === "name" || stored === "duration" ? stored : "recent";
+  });
   const fileInput = useRef<HTMLInputElement>(null);
+  const projectSearchInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api
@@ -51,6 +75,53 @@ export default function Home() {
     const timer = setInterval(refresh, 2000);
     return () => clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    localStorage.setItem("yaozi:project-sort", projectSort);
+  }, [projectSort]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
+      if (event.key === "/" && !typing) {
+        event.preventDefault();
+        projectSearchInput.current?.focus();
+      }
+      if (event.key === "Escape" && document.activeElement === projectSearchInput.current) {
+        setProjectQuery("");
+        projectSearchInput.current?.blur();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const projectCounts = useMemo(() => {
+    const list = projects ?? [];
+    return {
+      all: list.length,
+      running: list.filter((project) => RUNNING_STATUSES.includes(project.status)).length,
+      done: list.filter((project) => project.status === "done").length,
+      attention: list.filter(
+        (project) => project.status === "error" || project.status === "interrupted"
+      ).length,
+    };
+  }, [projects]);
+
+  const visibleProjects = useMemo(() => {
+    const normalizedQuery = projectQuery.trim().toLocaleLowerCase("zh-TW");
+    const list = (projects ?? []).filter((project) => {
+      const matchesQuery =
+        !normalizedQuery || project.name.toLocaleLowerCase("zh-TW").includes(normalizedQuery);
+      return matchesQuery && projectMatchesFilter(project, projectFilter);
+    });
+    return list.sort((a, b) => {
+      if (projectSort === "name") return a.name.localeCompare(b.name, "zh-Hant");
+      if (projectSort === "duration") return (b.duration ?? -1) - (a.duration ?? -1);
+      return b.created_at - a.created_at;
+    });
+  }, [projectFilter, projectQuery, projectSort, projects]);
 
   const handleFiles = useCallback(
     (files: FileList | File[]) => {
@@ -226,48 +297,131 @@ export default function Home() {
             <Img src="/art/empty.png" className="empty-art" />
             <p className="empty-hint">{t("還沒有專案。丟一支影片進來,一兩分鐘後就有逐字稿。")}</p>
           </div>
-        ) : (
-          <section className="project-grid">
-            {projects.map((p) => {
-              const running = RUNNING_STATUSES.includes(p.status);
-              return (
-                <a key={p.id} className="project-card" href={`#/p/${p.id}`}>
-                  {/* 還在跑的專案不去要縮圖:媒體檔可能還在寫,而且抽一張圖要搶 ffmpeg */}
-                  {!running && (
-                    <Img src={`/api/projects/${p.id}/thumb`} className="card-thumb" />
-                  )}
-                  <div className="project-name">{p.name}</div>
-                  <div className="project-meta">
-                    <span className="mono">
-                      {p.duration ? formatTime(p.duration) : "--:--"}
-                    </span>
-                    {p.seg_count ? <span className="mono">{p.seg_count} {t("句")}</span> : null}
-                    <span>{new Date(p.created_at * 1000).toLocaleDateString(lang)}</span>
-                  </div>
-                  <div className="project-status">
-                    {running && <span className="spinner" aria-hidden />}
-                    <span className={"status-text status-" + p.status}>{statusLabel(p)}</span>
-                  </div>
-                  {p.status === "transcribing" && (
-                    <span className="bar card-bar">
-                      <span className="bar-fill" style={{ width: `${p.progress * 100}%` }} />
-                    </span>
-                  )}
-                  <button
-                    className="card-delete"
-                    title={t("刪除專案")}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      deleteProject(p);
-                    }}
-                  >
-                    ✕
+        ) : projects.length > 0 ? (
+          <section className="project-library" aria-labelledby="project-library-title">
+            <header className="library-head">
+              <div>
+                <p className="library-kicker">PROJECT LIBRARY</p>
+                <h2 id="project-library-title">{t("繼續上次的進度")}</h2>
+              </div>
+              <p className="library-summary">
+                <strong>{projectCounts.done}</strong> {t("個完成")}
+                {projectCounts.running > 0 && (
+                  <span> · {projectCounts.running} {t("個處理中")}</span>
+                )}
+              </p>
+            </header>
+
+            <div className="library-controls">
+              <label className="project-search">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden>
+                  <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                  <path d="M10.5 10.5 14 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+                <input
+                  ref={projectSearchInput}
+                  value={projectQuery}
+                  onChange={(event) => setProjectQuery(event.target.value)}
+                  placeholder={t("搜尋專案名稱")}
+                  aria-label={t("搜尋專案名稱")}
+                />
+                {projectQuery ? (
+                  <button type="button" onClick={() => setProjectQuery("")} aria-label={t("清除搜尋")}>
+                    ×
                   </button>
-                </a>
-              );
-            })}
+                ) : (
+                  <kbd>/</kbd>
+                )}
+              </label>
+
+              <div className="project-filters" role="group" aria-label={t("專案狀態篩選")}>
+                {PROJECT_FILTERS.map((filter) => (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    className={projectFilter === filter.key ? "on" : ""}
+                    aria-pressed={projectFilter === filter.key}
+                    onClick={() => setProjectFilter(filter.key)}
+                  >
+                    {t(filter.label)}
+                    <span>{projectCounts[filter.key]}</span>
+                  </button>
+                ))}
+              </div>
+
+              <label className="project-sort">
+                <span>{t("排序")}</span>
+                <select
+                  value={projectSort}
+                  onChange={(event) => setProjectSort(event.target.value as ProjectSort)}
+                  aria-label={t("專案排序")}
+                >
+                  <option value="recent">{t("最近建立")}</option>
+                  <option value="name">{t("名稱")}</option>
+                  <option value="duration">{t("影片長度")}</option>
+                </select>
+              </label>
+            </div>
+
+            {visibleProjects.length === 0 ? (
+              <div className="library-empty">
+                <span>{t("沒有符合條件的專案")}</span>
+                <button
+                  className="link-btn"
+                  onClick={() => {
+                    setProjectQuery("");
+                    setProjectFilter("all");
+                  }}
+                >
+                  {t("清除篩選")}
+                </button>
+              </div>
+            ) : (
+              <div className="project-grid">
+                {visibleProjects.map((p) => {
+                  const running = RUNNING_STATUSES.includes(p.status);
+                  return (
+                    <a key={p.id} className="project-card" href={`#/p/${p.id}`}>
+                      {/* 還在跑的專案不去要縮圖:媒體檔可能還在寫,而且抽一張圖要搶 ffmpeg */}
+                      {!running && (
+                        <Img src={`/api/projects/${p.id}/thumb`} className="card-thumb" />
+                      )}
+                      <div className="project-name">{p.name}</div>
+                      <div className="project-meta">
+                        <span className="mono">
+                          {p.duration ? formatTime(p.duration) : "--:--"}
+                        </span>
+                        {p.seg_count ? (
+                          <span className="mono">{p.seg_count} {t("句")}</span>
+                        ) : null}
+                        <span>{new Date(p.created_at * 1000).toLocaleDateString(lang)}</span>
+                      </div>
+                      <div className="project-status">
+                        {running && <span className="spinner" aria-hidden />}
+                        <span className={"status-text status-" + p.status}>{statusLabel(p)}</span>
+                      </div>
+                      {p.status === "transcribing" && (
+                        <span className="bar card-bar">
+                          <span className="bar-fill" style={{ width: `${p.progress * 100}%` }} />
+                        </span>
+                      )}
+                      <button
+                        className="card-delete"
+                        title={t("刪除專案")}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          deleteProject(p);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
           </section>
-        )}
+        ) : null}
 
         <section className="mascot">
           <div className="mascot-copy">

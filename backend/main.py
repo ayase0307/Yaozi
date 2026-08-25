@@ -22,8 +22,10 @@ from . import (
     fetcher,
     fonts,
     llm,
+    ocr,
     storage,
     style,
+    timeline,
     transcriber,
     translate,
     waveform,
@@ -88,6 +90,7 @@ def health():
     ai = llm.provider_status()
     return {
         "ffmpeg": config.ffmpeg_available(),
+        "ocr": ocr.available(),
         "claude": llm.find_claude() is not None,
         "codex": llm.find_codex() is not None,
         "ai_provider": ai["provider"],
@@ -149,6 +152,10 @@ def patch_project(pid: str, body: dict = Body(...)):
         meta["name"] = name[:200]
     if "trim" in body:
         meta["trim"] = storage.clean_trim(body["trim"], meta.get("duration"))
+    if "omit_ranges" in body:
+        meta["omit_ranges"] = timeline.clean_omit_ranges(
+            body.get("omit_ranges"), meta.get("duration"), meta.get("trim")
+        )
     storage.save_project(meta)
     return meta
 
@@ -301,6 +308,28 @@ def start_cuts(pid: str):
         raise HTTPException(409, str(e))
 
 
+@app.post("/api/projects/{pid}/ocr")
+def start_ocr(pid: str, body: dict = Body(...)):
+    _get_project_or_404(pid)
+    try:
+        return ocr.start(pid, body)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/api/projects/{pid}/ocr")
+def get_ocr(pid: str):
+    _get_project_or_404(pid)
+    return ocr.get_state(pid)
+
+
+@app.delete("/api/projects/{pid}/ocr")
+def cancel_ocr(pid: str):
+    _get_project_or_404(pid)
+    ocr.cancel(pid)
+    return {"status": "canceled"}
+
+
 @app.get("/api/dictionary")
 def get_dictionary():
     return {"entries": dictionary.load()}
@@ -407,7 +436,11 @@ def put_ai_settings(body: dict = Body(...)):
 def start_translate(pid: str, body: dict = Body(...)):
     _get_project_or_404(pid)
     try:
-        return translate.start(pid, (body.get("target") or "").strip())
+        return translate.start(
+            pid,
+            (body.get("target") or "").strip(),
+            (body.get("mode") or "bilingual").strip(),
+        )
     except RuntimeError as e:
         raise HTTPException(400, str(e))
 
@@ -511,8 +544,8 @@ def get_thumb(pid: str):
 def export_subtitles(pid: str, format: str = "srt"):
     meta = _get_project_or_404(pid)
     subs = storage.load_subtitles(pid)
-    # 有設剪輯範圍就跟著裁,不然匯出的字幕會對不上剪過的成品影片
-    segments = storage.apply_trim(subs["segments"], meta.get("trim"))
+    # 頭尾裁切與中間剪除都要套到字幕，時間軸才會跟成品影片一致
+    segments = storage.apply_edits(subs["segments"], meta)
     try:
         filename, content, mime = exporter.export(segments, format, meta["name"])
     except ValueError as e:
