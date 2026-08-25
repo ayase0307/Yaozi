@@ -2632,6 +2632,9 @@ a.btn {
 
 .ocr-panel {
   width: min(420px, calc(100vw - 32px));
+  /* 內容不多,高度貼合內容就好;超出可視範圍才撐滿並讓內部捲動 */
+  height: fit-content;
+  max-height: calc(100vh - 134px);
 }
 
 .ocr-head > div:first-child {

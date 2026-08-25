@@ -235,6 +235,7 @@ export default {
   "這是全域設定,所有專案共用,燒錄成品用的就是這一組。編輯器工具列的「字幕外觀」改的是同一份,在那邊調可以一邊看影片。":
     "These are global settings shared by every project, and they are what gets burned in. “Subtitle style” in the editor toolbar edits the same set, with the video next to it.",
   "音訊處理": "Audio processing",
+  "音訊": "Audio",
   "套用在匯出的成品影片與「下載處理後音訊」上。原始檔不會被改動。":
     "Applied to the exported video and to “Processed audio”. The original file is never modified.",
   "降噪": "Denoise",

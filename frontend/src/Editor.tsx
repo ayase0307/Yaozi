@@ -8,6 +8,7 @@ import {
 } from "react";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { api } from "./api";
+import AudioPanel from "./AudioPanel";
 import Brand from "./Brand";
 import { useHistoryState } from "./history";
 import OcrPanel from "./OcrPanel";
@@ -33,6 +34,7 @@ import {
   RUNNING_STATUSES,
   statusLabel,
   type AiProvider,
+  type AudioSettings,
   type BurnJob,
   type DictEntry,
   type FixJob,
@@ -165,6 +167,8 @@ export default function Editor({ projectId }: { projectId: string }) {
 
   const [subStyle, setSubStyle] = useState<SubtitleStyle | null>(null);
   const [styleOpen, setStyleOpen] = useState(false);
+  const [sound, setSound] = useState<AudioSettings | null>(null);
+  const [audioOpen, setAudioOpen] = useState(false);
   // 波形區固定吃掉 245px,校對的時候根本不看它。收起來字幕列表就多七八句。
   const [waveOpen, setWaveOpen] = useState(
     () => localStorage.getItem("yaozi:wave-open") !== "0"
@@ -373,6 +377,11 @@ export default function Editor({ projectId }: { projectId: string }) {
       .getStyle()
       .then(setSubStyle)
       .catch(() => {});
+  }, []);
+
+  // 音訊處理:全域設定,匯出與「處理後音訊(MP3)」都會套用
+  useEffect(() => {
+    api.getAudio().then(setSound).catch(() => {});
   }, []);
 
   // AI 校正進行中輪詢進度;完成後打開審閱面板
@@ -1733,11 +1742,26 @@ export default function Editor({ projectId }: { projectId: string }) {
           {t("詞庫")}
         </button>
         <button
+          className={"btn small" + (audioOpen ? " on" : "")}
+          onClick={() => {
+            setDictOpen(false);
+            setProblemOpen(false);
+            setOcrOpen(false);
+            setStyleOpen(false);
+            setAudioOpen((v) => !v);
+          }}
+          aria-pressed={audioOpen}
+          title={t("音訊處理")}
+        >
+          {t("音訊")}
+        </button>
+        <button
           className={"btn small" + (styleOpen ? " on" : "")}
           onClick={() => {
             setDictOpen(false);
             setProblemOpen(false);
             setOcrOpen(false);
+            setAudioOpen(false);
             setStyleOpen((v) => !v);
           }}
           aria-pressed={styleOpen}
@@ -1761,7 +1785,10 @@ export default function Editor({ projectId }: { projectId: string }) {
       {/* 面板一開就把 .editor 縮窄,面板才不會蓋在字幕上——調外觀正是最需要一邊看字幕的時候 */}
       <main
         className={
-          "editor" + (styleOpen || dictOpen || reviewItems || problemOpen || ocrOpen ? " docked" : "")
+          "editor" +
+          (styleOpen || dictOpen || reviewItems || problemOpen || ocrOpen || audioOpen
+            ? " docked"
+            : "")
         }
       >
         <section className="player-pane">
@@ -2009,6 +2036,14 @@ export default function Editor({ projectId }: { projectId: string }) {
           value={subStyle}
           onChange={setSubStyle}
           onClose={() => setStyleOpen(false)}
+        />
+      )}
+
+      {audioOpen && sound && (
+        <AudioPanel
+          value={sound}
+          onChange={setSound}
+          onClose={() => setAudioOpen(false)}
         />
       )}
 
