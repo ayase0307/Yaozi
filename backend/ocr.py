@@ -28,6 +28,13 @@ _engine_lock = threading.Lock()
 
 LAYOUTS = {"auto", "single", "bilingual_top", "bilingual_bottom"}
 
+# 差異預篩:字幕沒變的畫面直接沿用上一個結果,不必每格都跑 OCR。
+# crop 縮到 240px 寬再算灰階平均差,壓縮雜訊通常 <3,字幕出現/消失一定超過。
+DIFF_WIDTH = 240
+DIFF_THRESHOLD = 4.0
+# 每隔幾個取樣點強制真跑一次 OCR:防止連續誤判把舊結果一直沿用下去。
+FORCE_OCR_EVERY = 10
+
 
 def available() -> bool:
     return importlib.util.find_spec("rapidocr") is not None and importlib.util.find_spec("cv2") is not None
@@ -132,7 +139,14 @@ def _get_engine():
         if _engine is None:
             from rapidocr import RapidOCR
 
-            _engine = RapidOCR()
+            try:
+                from onnxruntime import get_available_providers
+
+                use_dml = "DmlExecutionProvider" in get_available_providers()
+            except ImportError:
+                use_dml = False
+            params = {"EngineConfig.onnxruntime.use_dml": True} if use_dml else None
+            _engine = RapidOCR(params=params)
         return _engine
 
 
@@ -263,6 +277,29 @@ def _similar(a: dict, b: dict) -> bool:
     return True
 
 
+def _diff_signature(crop):
+    """縮小轉灰階的 int16 陣列,給 crops_similar 算平均差。"""
+    import cv2
+
+    height, width = crop.shape[:2]
+    scale = DIFF_WIDTH / max(width, 1)
+    small = cv2.resize(crop, (DIFF_WIDTH, max(1, round(height * scale))))
+    if small.ndim == 2:
+        gray = small
+    else:
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    return gray.astype("int16")
+
+
+def crops_similar(prev_sig, sig, threshold: float = DIFF_THRESHOLD) -> bool:
+    """兩張 crop 的平均像素差低於門檻就視為字幕沒變。獨立函式方便測試。"""
+    if prev_sig is None or prev_sig.shape != sig.shape:
+        return False
+    import cv2
+
+    return float(cv2.absdiff(prev_sig, sig).mean()) < threshold
+
+
 def observations_to_segments(observations: list[tuple[float, dict | None]], step: float, duration: float) -> list[dict]:
     """合併相鄰重複字幕。允許中間漏辨識一格，降低閃斷與時間軸碎片。"""
     runs: list[dict] = []
@@ -328,13 +365,36 @@ def _run(pid: str, media: Path, meta: dict, job: dict) -> None:
         engine = _get_engine()
         observations: list[tuple[float, dict | None]] = []
 
+        # 順序讀幀:先定位到起點,之後用 grab() 快進到目標幀,
+        # 遠比每格 set(POS_MSEC) 的隨機存取便宜。
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0)
+        sequential = fps > 0
+        next_frame = -1
+        if sequential:
+            next_frame = int(round(start_at * fps))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, next_frame)
+
+        prev_sig = None
+        prev_observed = None
+        since_ocr = FORCE_OCR_EVERY  # 第一格一定要真跑
         for index in range(total):
             if job["cancel"]:
                 job["status"] = "canceled"
                 return
             at = min(start_at + index * step, end_at)
-            cap.set(cv2.CAP_PROP_POS_MSEC, at * 1000)
-            ok, frame = cap.read()
+            if sequential:
+                want = int(round(at * fps))
+                ok = True
+                while ok and next_frame < want:
+                    ok = cap.grab()
+                    next_frame += 1
+                if ok:
+                    ok = cap.grab()
+                    next_frame += 1
+                frame = cap.retrieve() if ok else None
+            else:
+                cap.set(cv2.CAP_PROP_POS_MSEC, at * 1000)
+                ok, frame = cap.read()
             observed = None
             if ok and frame is not None:
                 height, width = frame.shape[:2]
@@ -344,8 +404,24 @@ def _run(pid: str, media: Path, meta: dict, job: dict) -> None:
                 if width > 1280:
                     scale = 1280 / width
                     crop = cv2.resize(crop, (1280, max(1, round(crop.shape[0] * scale))))
-                result = engine(crop, text_score=0.45, box_thresh=0.45)
-                observed = observation_from_rows(_rows_from_result(result), options["layout"])
+                sig = _diff_signature(crop)
+                # 字幕沒變就直接沿用上一個結果;定期強制真跑一次當保險
+                if since_ocr < FORCE_OCR_EVERY and crops_similar(prev_sig, sig):
+                    observed = prev_observed
+                else:
+                    result = engine(crop, text_score=0.45, box_thresh=0.45)
+                    observed = observation_from_rows(
+                        _rows_from_result(result), options["layout"]
+                    )
+                    prev_observed = observed
+                    since_ocr = 0
+                prev_sig = sig
+                since_ocr += 1
+            else:
+                # 讀不到畫面就重設狀態,下一格重新真跑
+                prev_observed = None
+                prev_sig = None
+                since_ocr = FORCE_OCR_EVERY
             observations.append((at, observed))
             with _lock:
                 job["processed"] = index + 1

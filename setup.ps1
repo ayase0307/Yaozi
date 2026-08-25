@@ -63,6 +63,9 @@ $lock = "backend\requirements.lock.txt"
 $req = if (Test-Path $lock) { $lock } else { "backend\requirements.txt" }
 Write-Host ">> 安裝 Python 套件($req)..." -ForegroundColor Yellow
 & $venvPy -m pip install --quiet --upgrade pip
+# onnxruntime 與 onnxruntime-directml 共用同一個模組名,直接覆蓋安裝會壞;
+# 先把純 CPU 版移掉,DirectML 版才能乾淨接上 GPU。
+& $venvPy -m pip uninstall --quiet -y onnxruntime 2>$null
 & $venvPy -m pip install --quiet -r $req
 
 # --- 4. 前端(已有 dist 就跳過,不需要 Node)---

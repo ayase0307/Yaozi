@@ -1,5 +1,7 @@
 """OCR 字幕合併與非破壞式剪輯的快速自我檢查。"""
 
+import numpy as np
+
 from . import ocr, timeline
 
 
@@ -55,6 +57,16 @@ def run() -> None:
         omits,
     )
     assert [(item["start"], item["end"]) for item in edited] == [(1.0, 2.0), (2.5, 3.0)]
+
+    # 差異預篩:同畫面沿用結果、字幕出現要重新辨識、形狀不同不算相似
+    base = np.full((40, 240), 100, dtype="uint8")
+    sig = ocr._diff_signature(base)
+    assert ocr.crops_similar(sig, ocr._diff_signature(base + 2)), "雜訊不該觸發重跑"
+    with_text = base.copy()
+    with_text[10:30, 60:180] = 250  # 模擬字幕亮帶出現
+    assert not ocr.crops_similar(sig, ocr._diff_signature(with_text)), "字幕變化必須重跑"
+    other_size = np.zeros((80, 480), dtype="uint8")
+    assert not ocr.crops_similar(sig, ocr._diff_signature(other_size))
 
 
 if __name__ == "__main__":
