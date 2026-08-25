@@ -1,5 +1,6 @@
 """OCR 字幕合併與非破壞式剪輯的快速自我檢查。"""
 
+import os
 import numpy as np
 
 from . import ocr, timeline
@@ -10,6 +11,16 @@ def _row(text: str, cy: float, score: float = 0.95) -> dict:
 
 
 def run() -> None:
+    # provider 開關:cpu 強制關、dml/gpu 強制開,auto 交給機器自己判斷
+    os.environ["YAOZI_OCR_PROVIDER"] = "cpu"
+    assert ocr._use_dml() is False
+    os.environ["YAOZI_OCR_PROVIDER"] = "dml"
+    assert ocr._use_dml() is True
+    os.environ["YAOZI_OCR_PROVIDER"] = "GPU"
+    assert ocr._use_dml() is True
+    del os.environ["YAOZI_OCR_PROVIDER"]
+    assert isinstance(ocr._use_dml(), bool)
+
     bilingual = ocr.observation_from_rows(
         [_row("Hello world", 20), _row("哈囉世界", 55)], "auto"
     )

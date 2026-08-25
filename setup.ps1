@@ -63,10 +63,12 @@ $lock = "backend\requirements.lock.txt"
 $req = if (Test-Path $lock) { $lock } else { "backend\requirements.txt" }
 Write-Host ">> 安裝 Python 套件($req)..." -ForegroundColor Yellow
 & $venvPy -m pip install --quiet --upgrade pip
-# onnxruntime 與 onnxruntime-directml 共用同一個模組名,直接覆蓋安裝會壞;
-# 先把純 CPU 版移掉,DirectML 版才能乾淨接上 GPU。
-& $venvPy -m pip uninstall --quiet -y onnxruntime 2>$null
 & $venvPy -m pip install --quiet -r $req
+# rapidocr 依賴會把純 CPU 版 onnxruntime 拉回來;它與 directml 版共用模組名,
+# 裝完後移掉 CPU 版再補上 DirectML 版,OCR 才會走 GPU(沒 GPU 的機器可設
+# YAOZI_OCR_PROVIDER=cpu,這兩個套件留著也不影響)。
+& $venvPy -m pip uninstall --quiet -y onnxruntime 2>$null
+& $venvPy -m pip install --quiet onnxruntime-directml==1.24.4
 
 # --- 4. 前端(已有 dist 就跳過,不需要 Node)---
 if (-not (Test-Path "frontend\dist\index.html")) {

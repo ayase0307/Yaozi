@@ -40,6 +40,25 @@ def available() -> bool:
     return importlib.util.find_spec("rapidocr") is not None and importlib.util.find_spec("cv2") is not None
 
 
+def _use_dml() -> bool:
+    """要不要用 DirectML 跑 OCR。
+
+    環境變數 YAOZI_OCR_PROVIDER 控制:auto(預設)偵測到就用、
+    cpu 強制關閉(沒有 GPU 或驅動有問題的機器)、dml/gpu 強制開啟。
+    """
+    setting = os.environ.get("YAOZI_OCR_PROVIDER", "auto").strip().lower()
+    if setting == "cpu":
+        return False
+    if setting in ("dml", "gpu"):
+        return True
+    try:
+        from onnxruntime import get_available_providers
+
+        return "DmlExecutionProvider" in get_available_providers()
+    except ImportError:
+        return False
+
+
 def _file(pid: str) -> Path:
     return storage.project_dir(pid) / "ocr.json"
 
@@ -139,13 +158,7 @@ def _get_engine():
         if _engine is None:
             from rapidocr import RapidOCR
 
-            try:
-                from onnxruntime import get_available_providers
-
-                use_dml = "DmlExecutionProvider" in get_available_providers()
-            except ImportError:
-                use_dml = False
-            params = {"EngineConfig.onnxruntime.use_dml": True} if use_dml else None
+            params = {"EngineConfig.onnxruntime.use_dml": True} if _use_dml() else None
             _engine = RapidOCR(params=params)
         return _engine
 
