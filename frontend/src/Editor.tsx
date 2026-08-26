@@ -1671,6 +1671,14 @@ export default function Editor({ projectId }: { projectId: string }) {
           {resegmenting ? t("重排中…") : t("重新斷句")}
         </button>
         <button
+          className="btn small batch"
+          onClick={retranscribe}
+          disabled={RUNNING_STATUSES.includes(project.status)}
+          title={t("重新辨識會覆蓋目前的字幕(舊字幕會備份成專案資料夾裡的 subtitles.bak.json)。確定繼續?")}
+        >
+          {t("重新辨識")}
+        </button>
+        <button
           className={"btn small" + (ocrOpen ? " on" : "")}
           onClick={openOcr}
           aria-pressed={ocrOpen}
