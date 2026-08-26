@@ -1,6 +1,12 @@
 /** English UI strings. Key = the Traditional Chinese source string.
  *  Missing key -> the Chinese shows through, never a blank. */
 export default {
+  "工具": "Tools",
+  "剪輯與檢視": "Edit and view",
+  "字幕處理": "Subtitle processing",
+  "面板與說明": "Panels and help",
+  "復原與重做": "Undo and redo",
+  "波形": "Waveform",
   "上傳失敗({0})": "Upload failed ({0})",
   "連不上伺服器": "Cannot reach the server",
   "這句是空的": "This line is empty",

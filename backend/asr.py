@@ -17,7 +17,7 @@ _lock = threading.Lock()
 DEFAULTS = {
     "language": config.LANGUAGE,  # "auto" = 自動偵測,其他是 Whisper 語言代碼
     "prompt": "",  # 提示詞:人名、專有名詞、歌詞片段,幫模型聽對難字
-    "vad": True,  # 過濾無語音片段(關掉的話整段音樂/雜訊也會拿去辨識)
+    "vad": False,  # 預設保留完整音軌；需要時再開啟無語音片段過濾
     "vad_threshold": 0.5,  # 越低抓到越多語音(小聲、唱歌),越高越不會把雜訊當人聲
     "split_chars": 24,  # 一句最多幾個中文字(英文字母算半個);碎片會黏回來、超長的切開,0 = 都不動
 }

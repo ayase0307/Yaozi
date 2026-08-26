@@ -252,6 +252,21 @@ button {
   flex-shrink: 0;
 }
 
+.transport-controls,
+.history-controls {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.transport-controls {
+  gap: 10px;
+}
+
+.history-controls {
+  gap: 2px;
+}
+
 .play-btn {
   width: 34px;
   height: 34px;
@@ -330,6 +345,103 @@ button {
 
 .toolbar-spacer {
   flex: 1;
+}
+
+/* 播放與復原留在第一層；其餘依工作類型收進同一個工具面板。
+   低頻功能不再把窄螢幕撐成一條很長的橫向工具列。 */
+.toolbar-tools {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.toolbar-tools > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  list-style: none;
+}
+
+.toolbar-tools > summary::-webkit-details-marker {
+  display: none;
+}
+
+.toolbar-tools-caret {
+  color: var(--muted);
+  transition: transform 0.2s var(--ease-out);
+}
+
+.toolbar-tools[open] .toolbar-tools-caret {
+  transform: rotate(180deg);
+}
+
+.toolbar-tools-panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 9px);
+  right: 0;
+  width: min(520px, calc(100vw - 24px));
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.16);
+}
+
+.toolbar-tool-group {
+  padding: 10px;
+}
+
+.toolbar-tool-group + .toolbar-tool-group {
+  border-top: 1px solid var(--line);
+}
+
+.toolbar-tool-group h2 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.toolbar-tool-items {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.toolbar-tool-items .btn.small,
+.toolbar-tool-items > .icon-btn {
+  min-height: 36px;
+}
+
+.toolbar-wave-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.toolbar-wave-btn svg {
+  flex-shrink: 0;
+}
+
+/* 工具面板本身就是可捲動的容器，裡面的次選單改成就地展開，
+   避免 absolute 選單被面板邊界裁掉。 */
+.toolbar-tools-panel .hotkey-panel,
+.toolbar-tools-panel .omit-items {
+  position: static;
+  width: 100%;
+  min-width: 0;
+  max-height: 280px;
+  margin-top: 8px;
+  box-shadow: none;
+}
+
+.toolbar-tools-panel .hotkey-menu,
+.toolbar-tools-panel .omit-menu {
+  max-width: 100%;
 }
 
 .hotkey-menu {
@@ -1503,27 +1615,6 @@ button {
 @media (max-width: 1200px) {
   .editor.docked {
     padding-right: 0;
-  }
-}
-
-/* 工具列在筆電直式或分割視窗中會比畫面寬。讓工具列自己橫向捲動，
-   不把整份文件撐寬；所有功能仍保留，不用把校對工具藏進第二層選單。 */
-@media (max-width: 1100px) {
-  .toolbar {
-    gap: 6px;
-    padding-inline: 12px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-inline: contain;
-    scrollbar-width: thin;
-  }
-
-  .toolbar > * {
-    flex-shrink: 0;
-  }
-
-  .toolbar .toolbar-spacer {
-    flex: 0 0 4px;
   }
 }
 
@@ -3568,31 +3659,61 @@ a.btn {
   }
 
   .toolbar {
-    height: 58px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 10px;
+    height: auto;
+    min-height: 58px;
+    padding: 8px 12px;
+  }
+
+  .transport-controls {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .toolbar > .toolbar-sep,
+  .toolbar > .toolbar-spacer {
+    display: none;
+  }
+
+  .history-controls {
+    justify-self: start;
+  }
+
+  .toolbar-tools {
+    justify-self: end;
   }
 
   .toolbar .play-btn {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
   }
 
-  .toolbar > .icon-btn {
-    width: 40px;
-    height: 40px;
+  .history-controls .icon-btn {
+    width: 44px;
+    height: 44px;
   }
 
   .toolbar .btn.small {
-    min-height: 40px;
+    min-height: 44px;
     padding-inline: 13px;
   }
 
+  .toolbar-tools-panel {
+    width: calc(100vw - 24px);
+    max-height: min(64vh, 560px);
+  }
+
   .proof-controls .icon-btn {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
 
   .playback-rate {
-    height: 36px;
+    height: 44px;
   }
 
   .player-pane {
@@ -3691,6 +3812,12 @@ a.btn {
 
   .dict-form .btn {
     margin-left: auto;
+  }
+}
+
+@media (max-width: 360px) {
+  .time-total {
+    display: none;
   }
 }
 

@@ -1517,83 +1517,102 @@ export default function Editor({ projectId }: { projectId: string }) {
       )}
 
       <div className="toolbar">
-        <button
-          className="play-btn"
-          onClick={togglePlay}
-          aria-label={isPlaying ? t("暫停") : t("播放")}
-        >
-          {isPlaying ? (
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
-              <rect x="3" y="2" width="4" height="12" rx="1" fill="currentColor" />
-              <rect x="9" y="2" width="4" height="12" rx="1" fill="currentColor" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
-              <path d="M4 2.5v11l9-5.5z" fill="currentColor" />
-            </svg>
-          )}
-        </button>
-        <span className="time-display">
-          {formatTimeMs(currentTime)}
-          <span className="time-total">
-            {" / "}
-            {project.duration ? formatTime(project.duration) : "--:--"}
+        <span className="transport-controls">
+          <button
+            className="play-btn"
+            onClick={togglePlay}
+            aria-label={isPlaying ? t("暫停") : t("播放")}
+          >
+            {isPlaying ? (
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
+                <rect x="3" y="2" width="4" height="12" rx="1" fill="currentColor" />
+                <rect x="9" y="2" width="4" height="12" rx="1" fill="currentColor" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
+                <path d="M4 2.5v11l9-5.5z" fill="currentColor" />
+              </svg>
+            )}
+          </button>
+          <span className="time-display">
+            {formatTimeMs(currentTime)}
+            <span className="time-total">
+              {" / "}
+              {project.duration ? formatTime(project.duration) : "--:--"}
+            </span>
+          </span>
+          <span className="proof-controls" role="group" aria-label="校對播放控制">
+            <button
+              className="icon-btn"
+              onClick={replaySentence}
+              disabled={!segments.length}
+              aria-label="重播目前句"
+              title="從目前選取句的前 0.35 秒開始播放 (R)"
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
+                <path
+                  d="M5 4H2.5V1.5M2.8 4A6 6 0 1 1 2 9"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path d="m7 5.4 4 2.6-4 2.6z" fill="currentColor" />
+              </svg>
+            </button>
+            <button
+              className={"icon-btn loop-btn" + (loopSentence ? " on" : "")}
+              onClick={() => setLoopSentence((enabled) => !enabled)}
+              disabled={!segments.length}
+              aria-label="循環目前句"
+              aria-pressed={loopSentence}
+              title="循環播放目前選取句 (L)"
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
+                <path
+                  d="M3 5.5h8.5L10 4m3 6.5H4.5L6 12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <select
+              className="playback-rate"
+              value={playbackRate}
+              onChange={(e) => changePlaybackRate(Number(e.target.value))}
+              aria-label="播放速度"
+              title="校對播放速度"
+            >
+              {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
+                <option key={rate} value={rate}>
+                  {rate}×
+                </option>
+              ))}
+            </select>
           </span>
         </span>
-        <span className="proof-controls" role="group" aria-label="校對播放控制">
-          <button
-            className="icon-btn"
-            onClick={replaySentence}
-            disabled={!segments.length}
-            aria-label="重播目前句"
-            title="從目前選取句的前 0.35 秒開始播放 (R)"
-          >
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
-              <path
-                d="M5 4H2.5V1.5M2.8 4A6 6 0 1 1 2 9"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path d="m7 5.4 4 2.6-4 2.6z" fill="currentColor" />
-            </svg>
-          </button>
-          <button
-            className={"icon-btn loop-btn" + (loopSentence ? " on" : "")}
-            onClick={() => setLoopSentence((enabled) => !enabled)}
-            disabled={!segments.length}
-            aria-label="循環目前句"
-            aria-pressed={loopSentence}
-            title="循環播放目前選取句 (L)"
-          >
-            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
-              <path
-                d="M3 5.5h8.5L10 4m3 6.5H4.5L6 12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-          <select
-            className="playback-rate"
-            value={playbackRate}
-            onChange={(e) => changePlaybackRate(Number(e.target.value))}
-            aria-label="播放速度"
-            title="校對播放速度"
-          >
-            {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
-              <option key={rate} value={rate}>
-                {rate}×
-              </option>
-            ))}
-          </select>
-        </span>
         <span className="toolbar-sep" aria-hidden />
+        <span className="history-controls" role="group" aria-label={t("復原與重做")}>
+          <button className="icon-btn" onClick={undo} title={t("復原 (Ctrl+Z)")}>
+            ↺
+          </button>
+          <button className="icon-btn" onClick={redo} title={t("重做 (Ctrl+Y)")}>
+            ↻
+          </button>
+        </span>
+        <span className="toolbar-spacer" />
+        <details className="toolbar-tools">
+          <summary className="btn small">
+            {t("工具")} <span className="toolbar-tools-caret" aria-hidden>⌄</span>
+          </summary>
+          <div className="toolbar-tools-panel">
+            <section className="toolbar-tool-group">
+              <h2>{t("剪輯與檢視")}</h2>
+              <div className="toolbar-tool-items">
         <TrimControls
           trim={project.trim}
           currentTime={currentTime}
@@ -1610,9 +1629,8 @@ export default function Editor({ projectId }: { projectId: string }) {
           onChange={setOmitRanges}
           onSeek={seekTo}
         />
-        <span className="toolbar-sep" aria-hidden />
         <button
-          className={"icon-btn" + (waveOpen ? " on" : "")}
+          className={"btn small toolbar-wave-btn" + (waveOpen ? " on" : "")}
           onClick={toggleWave}
           aria-pressed={waveOpen}
           title={waveOpen ? t("收起波形區,字幕列表變長") : t("展開波形區")}
@@ -1633,15 +1651,13 @@ export default function Editor({ projectId }: { projectId: string }) {
               );
             })}
           </svg>
+          {t("波形")}
         </button>
-        <span className="toolbar-sep" aria-hidden />
-        <button className="icon-btn" onClick={undo} title={t("復原 (Ctrl+Z)")}>
-          ↺
-        </button>
-        <button className="icon-btn" onClick={redo} title={t("重做 (Ctrl+Y)")}>
-          ↻
-        </button>
-        <span className="toolbar-spacer" />
+              </div>
+            </section>
+            <section className="toolbar-tool-group">
+              <h2>{t("字幕處理")}</h2>
+              <div className="toolbar-tool-items">
         {/* 左邊這組會一次改動全部字幕(所以標成 batch,按下去前要想一下);
             右邊那組只是開面板,按錯了關掉就好。 */}
         <input
@@ -1745,7 +1761,11 @@ export default function Editor({ projectId }: { projectId: string }) {
               {t("AI 校正")}
             </button>
           ))}
-        <span className="toolbar-sep" aria-hidden />
+              </div>
+            </section>
+            <section className="toolbar-tool-group">
+              <h2>{t("面板與說明")}</h2>
+              <div className="toolbar-tool-items">
         <button className="btn small" onClick={openDict} title={t("管理錯字自動取代清單")}>
           {t("詞庫")}
         </button>
@@ -1786,6 +1806,10 @@ export default function Editor({ projectId }: { projectId: string }) {
                 <span>{desc}</span>
               </div>
             ))}
+          </div>
+        </details>
+              </div>
+            </section>
           </div>
         </details>
       </div>
