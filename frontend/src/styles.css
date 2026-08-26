@@ -35,6 +35,8 @@
   --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
   /* 設定頁可調(UiSize.tsx),點陣介面字型需要放大到 11 的倍數才銳利 */
   --ui-size: 15px;
+  /* 側邊面板最寬 420px,再留 32px 的視覺間距與捲軸空間。 */
+  --editor-dock-reserve: 452px;
   /* 動畫曲線:起步快、收尾拖很長的 expo,是「看起來貴」的那種手感 */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -119,6 +121,7 @@ button {
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .topbar-note {
@@ -131,6 +134,7 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .topbar-right {
@@ -138,6 +142,7 @@ button {
   display: flex;
   align-items: center;
   gap: 14px;
+  flex-shrink: 0;
 }
 
 .save-state {
@@ -1483,14 +1488,16 @@ button {
   display: grid;
   grid-template-columns: minmax(360px, 47%) 1fr;
   overflow: hidden;
+  min-width: 0;
+  min-height: 0;
 }
 
 /* 右側面板(字幕外觀/詞庫/AI 校正)是 fixed 的,會蓋住字幕列表。
-   一開面板就把編輯區讓出 432px —— 調外觀正是最需要同時看到字幕的時候。
+   一開面板就把編輯區讓出面板寬度與安全間距 —— 調外觀正是最需要同時看到字幕的時候。
    視窗太窄時讓不出來,就維持原本蓋上去的行為。
    不加 transition:動的是 grid 容器的 padding,整份字幕列表會被連續重排 200ms。 */
 .editor.docked {
-  padding-right: 432px;
+  padding-right: var(--editor-dock-reserve);
 }
 
 @media (max-width: 1200px) {
@@ -1523,6 +1530,8 @@ button {
 .player-pane {
   padding: 16px 20px;
   overflow-y: auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 .video-wrap {
@@ -1619,6 +1628,12 @@ button {
   align-items: center;
   gap: 10px;
   margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.player-controls .hint {
+  flex: 1 1 240px;
+  min-width: 0;
 }
 
 .select {
@@ -1661,6 +1676,8 @@ button {
   background: var(--panel);
   border-left: 1px solid var(--line);
   overflow: hidden;
+  min-width: 0;
+  min-height: 0;
 }
 
 .search-bar {
@@ -1673,10 +1690,12 @@ button {
   border-radius: 10px;
   color: var(--muted);
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .search-bar input {
   flex: 1;
+  min-width: 0;
   border: none;
   background: transparent;
   font-family: inherit;
@@ -1722,6 +1741,8 @@ button {
   flex: 1;
   overflow-y: auto;
   padding: 4px 6px 30vh;
+  min-width: 0;
+  min-height: 0;
 }
 
 .virtual-sub-list {
@@ -2617,7 +2638,7 @@ a.btn {
   right: 16px;
   top: 118px;
   bottom: 16px;
-  width: min(400px, calc(100vw - 32px));
+  width: min(420px, calc(100vw - 32px));
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -2645,6 +2666,7 @@ a.btn {
 
 .ocr-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
 }
@@ -3004,6 +3026,7 @@ a.btn {
 
 .fix-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px;
   display: flex;
@@ -3477,6 +3500,10 @@ a.btn {
     overflow-y: auto;
   }
 
+  .player-controls .hint {
+    flex-basis: 100%;
+  }
+
   .subtitle-pane {
     border-left: none;
     border-top: 1px solid var(--line);
@@ -3488,6 +3515,13 @@ a.btn {
 
   .topbar-note {
     display: none;
+  }
+
+  .fix-panel {
+    top: 110px;
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
   }
 }
 
@@ -3637,6 +3671,26 @@ a.btn {
     right: 10px;
     bottom: 10px;
     width: calc(100vw - 20px);
+  }
+
+  .fix-panel {
+    top: 96px;
+    right: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
+    border-radius: 12px;
+  }
+
+  .dict-form {
+    flex-wrap: wrap;
+  }
+
+  .dict-form input {
+    flex: 1 1 calc(50% - 20px);
+  }
+
+  .dict-form .btn {
+    margin-left: auto;
   }
 }
 
